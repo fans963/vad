@@ -1,0 +1,26 @@
+{
+  "name": "mywave-qt",
+  "version": "1.0.0",
+  "dependencies": [
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": ["concurrent", "gui", "opengl", "widgets"]
+    },
+    {
+      "name": "qtbase",
+      "default-features":false,
+      "platform": "linux",
+      "features": ["fontconfig", "wayland"]
+    },
+    {
+      "name": "qtmultimedia",
+      "default-features": false
+    },
+    "libsndfile",
+    {
+      "name": "fftw3",
+      "features": ["avx2"]
+    }
+  ]
+}
