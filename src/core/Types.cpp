@@ -7,6 +7,11 @@ CachedChart CachedChart::getRange(float start, float end) const {
     result.visible = visible;
     result.minY = minY;
     result.maxY = maxY;
+    result.heatValues = heatValues;
+    result.heatColumns = heatColumns;
+    result.heatRows = heatRows;
+    result.heatXMax = heatXMax;
+    result.heatYMax = heatYMax;
 
     if (points.isEmpty()) return result;
 

@@ -25,6 +25,12 @@ public:
     void setSelectedKey(const QString& key);
     QString selectedKey() const;
     bool isVisible(const QString& filePath, DataType dt) const;
+    void setSeriesVisible(const QString& filePath, DataType dt, bool visible);
+    void setSeriesColor(const QString& filePath, DataType dt, const QColor& color);
+    QPair<double, double> selectionRange() const;
+    void clearSelection();
+    bool savePng(const QString& path) const;
+    bool savePdf(const QString& path) const;
 
     int plotWidth() const;
     void setFrameGrid(int frameSize);
@@ -33,6 +39,7 @@ public:
 signals:
     void xRangeChanged(double min, double max);
     void plotWidthChanged(int pixels);
+    void selectionRangeChanged(double firstSample, double lastSample);
 
 public:
     void rebuildSeries();
@@ -44,6 +51,11 @@ private:
     QCustomPlot* m_plot = nullptr;
     QCPItemText* m_coordLabel = nullptr;
     QCPItemLine* m_playhead = nullptr;
+    QCPItemLine* m_selectionStartLine = nullptr;
+    QCPItemLine* m_selectionEndLine = nullptr;
+    double m_selectionStart = -1.0;
+    double m_selectionEnd = -1.0;
+    bool m_selecting = false;
     int m_lastWidth = 0;
     int m_frameGridSize = 0;
 
@@ -58,6 +70,7 @@ private:
     QHash<QString, Meta> m_meta;
     QString m_selectedKey;
     int m_nextColorIndex = 0;
+    bool m_stackedSeries = false;
 
     // Default color palette
     static constexpr int kPaletteSize = 8;

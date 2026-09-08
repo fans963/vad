@@ -9,7 +9,7 @@ HomePanel::HomePanel(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
     layout->setAlignment(Qt::AlignCenter);
 
-    auto* title = new QLabel(QStringLiteral("VAD - Voice Activity Detection"));
+    auto* title = new QLabel(QStringLiteral("MyWave 语音分析系统"));
     title->setStyleSheet("font-size: 24px; font-weight: bold;");
     title->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
@@ -17,8 +17,8 @@ HomePanel::HomePanel(QWidget* parent) : QWidget(parent) {
     layout->addSpacing(10);
 
     auto* subtitle = new QLabel(
-        QStringLiteral("Real-time interactive audio analysis tool\n"
-                       "Drag & drop or click + to load audio files"));
+        QStringLiteral("语音波形、时域特征、频域特征与说话人识别\n"
+                       "可拖放音频或点击“打开”加载文件"));
     subtitle->setAlignment(Qt::AlignCenter);
     subtitle->setStyleSheet("font-size: 14px; color: #666;");
     layout->addWidget(subtitle);

@@ -50,9 +50,8 @@ FftProcessor::FftProcessor(int fftSize) : d(std::make_unique<Impl>(fftSize)) {}
 FftProcessor::~FftProcessor() = default;
 
 QVector<float> FftProcessor::computeMagnitudeSpectrum(const QVector<float>& timeData) {
-    d->N = timeData.size();
-    // Recreate plan if size changed
-    d.reset(new Impl(timeData.size()));
+    if (d->N != timeData.size())
+        d = std::make_unique<Impl>(timeData.size());
     return d->run(timeData);
 }
 
@@ -69,6 +68,35 @@ QVector<float> FftProcessor::computeLogAmplitudeSpectrum(const QVector<float>& m
 
 QVector<float> FftProcessor::computeCepstrum(const QVector<float>& logMagnitudes) {
     return computeMagnitudeSpectrum(logMagnitudes);
+}
+
+QVector<float> FftProcessor::computeRealCepstrum(const QVector<float>& timeData) {
+    const int n = timeData.size();
+    if (n <= 0) return {};
+
+    auto magnitude = computeMagnitudeSpectrum(timeData);
+    fftw_complex* spectrum = fftw_alloc_complex(n / 2 + 1);
+    double* output = fftw_alloc_real(n);
+    for (int i = 0; i <= n / 2; ++i) {
+        spectrum[i][0] = std::log(std::max<double>(magnitude[i], 1e-10));
+        spectrum[i][1] = 0.0;
+    }
+    fftw_plan inverse = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(gFftwPlanMutex);
+        inverse = fftw_plan_dft_c2r_1d(n, spectrum, output, FFTW_ESTIMATE);
+    }
+    fftw_execute(inverse);
+    QVector<float> result(n);
+    for (int i = 0; i < n; ++i)
+        result[i] = float(output[i] / n);
+    {
+        std::lock_guard<std::mutex> lock(gFftwPlanMutex);
+        fftw_destroy_plan(inverse);
+    }
+    fftw_free(output);
+    fftw_free(spectrum);
+    return result;
 }
 
 QVector<float> FftProcessor::computeMelSpectrum(const QVector<float>& magnitudes,
@@ -95,7 +123,7 @@ QVector<float> FftProcessor::computeMelSpectrum(const QVector<float>& magnitudes
             if (k < 0 || k >= magnitudes.size()) continue;
             float w = (k < binC) ? float(k - binL) / (binC - binL + 1e-5f)
                                  : float(binR - k) / (binR - binC + 1e-5f);
-            filterBanks[i] += w * magnitudes[k];
+            filterBanks[i] += w * magnitudes[k] * magnitudes[k];
         }
     }
     return filterBanks;

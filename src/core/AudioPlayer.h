@@ -6,6 +6,7 @@
 #include <QAudioFormat>
 #include <QBuffer>
 #include <memory>
+#include <limits>
 
 #include "Types.h"
 
@@ -17,7 +18,8 @@ public:
     ~AudioPlayer();
 
     void load(const AudioData& audio);
-    void play(uint64_t startSample = 0);
+    void play(uint64_t startSample = 0,
+              uint64_t endSample = std::numeric_limits<uint64_t>::max());
     void resume();
     void pause();
     void stop();
@@ -47,5 +49,6 @@ private:
     QTimer* m_timer = nullptr;
     bool m_playing = false;
     uint64_t m_startSample = 0;
+    uint64_t m_endSample = 0;
     float m_speed = 1.0f;
 };

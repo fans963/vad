@@ -20,12 +20,16 @@ struct HeatPoint {
 
 // ── Data type enum ──────────────────────────────────────────────────────────
 enum class DataType {
-    Audio, Spectrum, Energy, ZeroCrossingRate, Vad,
+    Audio, AudioLeft, AudioRight,
+    Spectrum, PowerSpectrum, LogSpectrum, Cepstrum,
+    MelSpectrum, Mfcc,
+    Energy, ZeroCrossingRate, Vad,
     AvgAmplitude,       // 短时平均振幅
     SpectrumFFT,        // 频谱的FFT（二次频谱）
     AutoCorrelation,    // 修正自相关函数
     Lpc,                // LPC 线性预测系数
     Lpcc,               // LPC 倒谱系数
+    LpcReconstructed,   // LPC 合成语音
     PitchAcf,           // ACF 基音周期
     PitchAmdf,          // AMDF 基音周期
     PitchCep,           // 倒谱法基音周期
@@ -36,7 +40,14 @@ enum class DataType {
 inline QString dataTypeName(DataType dt) {
     switch (dt) {
     case DataType::Audio:            return QStringLiteral("audio");
+    case DataType::AudioLeft:        return QStringLiteral("audio_left");
+    case DataType::AudioRight:       return QStringLiteral("audio_right");
     case DataType::Spectrum:         return QStringLiteral("spectrum");
+    case DataType::PowerSpectrum:    return QStringLiteral("power_spectrum");
+    case DataType::LogSpectrum:      return QStringLiteral("log_spectrum");
+    case DataType::Cepstrum:         return QStringLiteral("cepstrum");
+    case DataType::MelSpectrum:      return QStringLiteral("mel_spectrum");
+    case DataType::Mfcc:             return QStringLiteral("mfcc");
     case DataType::Energy:           return QStringLiteral("energy");
     case DataType::ZeroCrossingRate: return QStringLiteral("zcr");
     case DataType::Vad:              return QStringLiteral("vad");
@@ -45,6 +56,7 @@ inline QString dataTypeName(DataType dt) {
     case DataType::AutoCorrelation:  return QStringLiteral("acf");
     case DataType::Lpc:              return QStringLiteral("lpc");
     case DataType::Lpcc:             return QStringLiteral("lpcc");
+    case DataType::LpcReconstructed: return QStringLiteral("lpc_reconstructed");
     case DataType::PitchAcf:         return QStringLiteral("pitch_acf");
     case DataType::PitchAmdf:        return QStringLiteral("pitch_amdf");
     case DataType::PitchCep:         return QStringLiteral("pitch_cep");
@@ -56,8 +68,15 @@ inline QString dataTypeName(DataType dt) {
 
 inline QString dataTypeDisplayName(DataType dt) {
     switch (dt) {
-    case DataType::Audio:            return QStringLiteral("Waveform");
-    case DataType::Spectrum:         return QStringLiteral("Spectrum");
+    case DataType::Audio:            return QStringLiteral("语音波形");
+    case DataType::AudioLeft:        return QStringLiteral("左声道波形");
+    case DataType::AudioRight:       return QStringLiteral("右声道波形");
+    case DataType::Spectrum:         return QStringLiteral("幅度谱");
+    case DataType::PowerSpectrum:    return QStringLiteral("功率谱");
+    case DataType::LogSpectrum:      return QStringLiteral("对数功率谱");
+    case DataType::Cepstrum:         return QStringLiteral("倒谱");
+    case DataType::MelSpectrum:      return QStringLiteral("Mel 频谱");
+    case DataType::Mfcc:             return QStringLiteral("MFCC");
     case DataType::Energy:           return QStringLiteral("Energy");
     case DataType::ZeroCrossingRate: return QStringLiteral("ZCR");
     case DataType::Vad:              return QStringLiteral("VAD");
@@ -66,6 +85,7 @@ inline QString dataTypeDisplayName(DataType dt) {
     case DataType::AutoCorrelation:  return QStringLiteral("AutoCorr");
     case DataType::Lpc:              return QStringLiteral("LPC");
     case DataType::Lpcc:             return QStringLiteral("LPCC");
+    case DataType::LpcReconstructed: return QStringLiteral("LPC 合成语音");
     case DataType::PitchAcf:         return QStringLiteral("Pitch ACF");
     case DataType::PitchAmdf:        return QStringLiteral("Pitch AMDF");
     case DataType::PitchCep:         return QStringLiteral("Pitch Cep");
@@ -79,6 +99,12 @@ inline QString dataTypeDisplayName(DataType dt) {
 struct CachedChart {
     DataType dataType = DataType::Audio;
     QVector<ChartPoint> points;
+    // Spectrogram data is row-major: frame (x) * heatRows + bin (y).
+    QVector<float> heatValues;
+    int heatColumns = 0;
+    int heatRows = 0;
+    float heatXMax = 0.0f;
+    float heatYMax = 0.0f;
     float minY = 0.0f;
     float maxY = 0.0f;
     bool visible = true;
@@ -99,12 +125,14 @@ struct AudioInfo {
 // ── Decoded audio data ──────────────────────────────────────────────────────
 struct AudioData {
     QVector<float> samples;
+    QVector<float> leftSamples;
+    QVector<float> rightSamples;
     AudioInfo info;
 };
 
 // ── Engine configuration ────────────────────────────────────────────────────
 struct EngineConfig {
-    int frameSize = 256;
+    int frameSize = 512;
     int downSamplePointsNum = 600;
 };
 
@@ -172,6 +200,13 @@ inline QPair<QString, DataType> parseSeriesKey(const QString& key) {
     DataType dt = DataType::Audio;
     if (dtName == QLatin1String("audio"))         dt = DataType::Audio;
     else if (dtName == QLatin1String("spectrum")) dt = DataType::Spectrum;
+    else if (dtName == QLatin1String("audio_left")) dt = DataType::AudioLeft;
+    else if (dtName == QLatin1String("audio_right")) dt = DataType::AudioRight;
+    else if (dtName == QLatin1String("power_spectrum")) dt = DataType::PowerSpectrum;
+    else if (dtName == QLatin1String("log_spectrum")) dt = DataType::LogSpectrum;
+    else if (dtName == QLatin1String("cepstrum")) dt = DataType::Cepstrum;
+    else if (dtName == QLatin1String("mel_spectrum")) dt = DataType::MelSpectrum;
+    else if (dtName == QLatin1String("mfcc")) dt = DataType::Mfcc;
     else if (dtName == QLatin1String("energy"))   dt = DataType::Energy;
     else if (dtName == QLatin1String("zcr"))      dt = DataType::ZeroCrossingRate;
     else if (dtName == QLatin1String("vad"))      dt = DataType::Vad;
@@ -180,6 +215,7 @@ inline QPair<QString, DataType> parseSeriesKey(const QString& key) {
     else if (dtName == QLatin1String("acf"))      dt = DataType::AutoCorrelation;
     else if (dtName == QLatin1String("lpc"))      dt = DataType::Lpc;
     else if (dtName == QLatin1String("lpcc"))     dt = DataType::Lpcc;
+    else if (dtName == QLatin1String("lpc_reconstructed")) dt = DataType::LpcReconstructed;
     else if (dtName == QLatin1String("pitch_acf"))  dt = DataType::PitchAcf;
     else if (dtName == QLatin1String("pitch_amdf")) dt = DataType::PitchAmdf;
     else if (dtName == QLatin1String("pitch_cep"))  dt = DataType::PitchCep;

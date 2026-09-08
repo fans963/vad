@@ -4,6 +4,7 @@
 #include "EnergyVad.h"
 #include "ZcrVad.h"
 #include "CepstralVad.h"
+#include "ReferenceVad.h"
 #include <variant>
 
 class VadEngine {
@@ -17,6 +18,6 @@ public:
     VadResult process(const QVector<float>& samples, uint32_t sampleRate,
                       int frameSize) const;
 private:
-    using V = std::variant<EnergyVad, ZcrVad, CepstralVad>;
+    using V = std::variant<ReferenceVad, EnergyVad, ZcrVad, CepstralVad>;
     V m_algo;
 };

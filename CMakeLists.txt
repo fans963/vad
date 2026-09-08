@@ -74,3 +74,21 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     FFTW3::fftw3
     SndFile::sndfile
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(MyWaveDspTests
+        tests/DspParityTest.cpp
+        src/core/Types.cpp
+        src/core/DownSampler.cpp
+        src/dsp/DspUtils.cpp
+        src/dsp/FftProcessor.cpp
+        src/dsp/FeatureExtractor.cpp
+        src/dsp/LpcProcessor.cpp
+        src/dsp/PitchDetector.cpp
+        src/vad/ReferenceVad.cpp
+    )
+    target_include_directories(MyWaveDspTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(MyWaveDspTests PRIVATE Qt6::Core Qt6::Gui Qt6::Concurrent FFTW3::fftw3)
+    add_test(NAME dsp_reference_parity COMMAND MyWaveDspTests)
+endif()

@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "../ui/panels/HomePanel.h"
+#include "../speaker/SpeakerDialog.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -17,9 +18,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDebug>
+#include <QMessageBox>
+#include <QActionGroup>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
-    setWindowTitle(QStringLiteral("VAD - Voice Activity Detection"));
+    setWindowTitle(QStringLiteral("MyWave - 语音波形与特征分析"));
     resize(1400, 900);
     setAcceptDrops(true);
 
@@ -79,13 +82,12 @@ void MainWindow::wireSignals() {
     });
     connect(m_controlPanel, &ControlPanel::visibilityToggled,
             this, [this](const QString& fp, DataType dt, bool vis) {
+        m_chartWidget->setSeriesVisible(fp, dt, vis);
         m_engine->setChartVisibility(fp, dt, vis);
     });
     connect(m_controlPanel, &ControlPanel::colorChanged,
-            this, [this](const QString& fp, DataType dt, const QColor&) {
-        // Color is handled client-side in ChartWidget meta, trigger rebuild
-        m_chartWidget->rebuildSeries();
-        Q_UNUSED(fp); Q_UNUSED(dt);
+            this, [this](const QString& fp, DataType dt, const QColor& color) {
+        m_chartWidget->setSeriesColor(fp, dt, color);
     });
     connect(m_controlPanel, &ControlPanel::selectionChanged,
             this, [this](const QString& key) {
@@ -100,6 +102,12 @@ void MainWindow::wireSignals() {
     // Init with current width
     m_engine->setDownSamplePointsNum(
         std::max(200, m_chartWidget->plotWidth() * 2));
+    connect(m_chartWidget, &ChartWidget::selectionRangeChanged, this,
+            [this](double first, double last) {
+        statusBar()->showMessage(QStringLiteral("已选择样本 %1 — %2（%3 个采样点）")
+                                 .arg(first, 0, 'f', 0).arg(last, 0, 'f', 0)
+                                 .arg(last - first, 0, 'f', 0));
+    });
 }
 
 void MainWindow::setupUi() {
@@ -112,33 +120,43 @@ void MainWindow::setupUi() {
     // ── Toolbar: file selector + analysis ────────────────────────────────
     auto* toolbar = new QToolBar(QStringLiteral("Main"));
     toolbar->setMovable(false);
-    toolbar->addAction(QStringLiteral("Open..."), this, &MainWindow::onOpenFile);
+    toolbar->addAction(QStringLiteral("打开..."), this, &MainWindow::onOpenFile);
+    for (int slot = 0; slot < 3; ++slot)
+        toolbar->addAction(QStringLiteral("打开%1").arg(slot + 1), this,
+                           [this, slot] { openIntoSlot(slot); });
     toolbar->addSeparator();
     m_fileSelector = new QComboBox;
     m_fileSelector->setMinimumWidth(200);
     m_fileSelector->setToolTip(QStringLiteral("Select audio file for analysis"));
     toolbar->addWidget(m_fileSelector);
     toolbar->addSeparator();
-    auto* addCurveBtn = new QPushButton(QStringLiteral("+ Add Curve"));
+    auto* addCurveBtn = new QPushButton(QStringLiteral("+ 添加分析曲线"));
     auto* addCurveMenu = new QMenu(addCurveBtn);
     struct Entry { QString label; DataType dt; };
     for (const auto& [l, d] : QVector<Entry>{
-        {QStringLiteral("Audio Waveform"),           DataType::Audio},
-        {QStringLiteral("Spectrum (FFT)"),           DataType::Spectrum},
-        {QStringLiteral("Spectrum of Spectrum"),     DataType::SpectrumFFT},
-        {QStringLiteral("Energy (dB)"),              DataType::Energy},
-        {QStringLiteral("Avg Amplitude"),            DataType::AvgAmplitude},
-        {QStringLiteral("Zero-Crossing Rate"),       DataType::ZeroCrossingRate},
-        {QStringLiteral("Auto-Correlation"),         DataType::AutoCorrelation},
-        {QStringLiteral("LPC Coefficients"),         DataType::Lpc},
-        {QStringLiteral("LPCC"),                     DataType::Lpcc},
-        {QStringLiteral("Pitch (ACF)"),              DataType::PitchAcf},
-        {QStringLiteral("Pitch (AMDF)"),             DataType::PitchAmdf},
-        {QStringLiteral("Pitch (Cepstral)"),         DataType::PitchCep},
-        {QStringLiteral("VAD (Energy)"),             DataType::Vad},
-        {QStringLiteral("VAD (ZCR)"),                DataType::Vad},
-        {QStringLiteral("VAD (Cepstral)"),           DataType::CepstralVad},
-        {QStringLiteral("Spectrogram"),              DataType::Spectrogram},
+        {QStringLiteral("语音波形"),                 DataType::Audio},
+        {QStringLiteral("左声道波形"),               DataType::AudioLeft},
+        {QStringLiteral("右声道波形"),               DataType::AudioRight},
+        {QStringLiteral("幅度谱 (FFT)"),            DataType::Spectrum},
+        {QStringLiteral("功率谱"),                   DataType::PowerSpectrum},
+        {QStringLiteral("对数功率谱"),               DataType::LogSpectrum},
+        {QStringLiteral("倒谱"),                     DataType::Cepstrum},
+        {QStringLiteral("频谱的频谱（二次 FFT）"),    DataType::SpectrumFFT},
+        {QStringLiteral("Mel 频谱"),                DataType::MelSpectrum},
+        {QStringLiteral("MFCC"),                    DataType::Mfcc},
+        {QStringLiteral("短时能量"),                 DataType::Energy},
+        {QStringLiteral("短时平均振幅"),             DataType::AvgAmplitude},
+        {QStringLiteral("短时过零率"),               DataType::ZeroCrossingRate},
+        {QStringLiteral("修正自相关函数"),             DataType::AutoCorrelation},
+        {QStringLiteral("LPC 系数"),                DataType::Lpc},
+        {QStringLiteral("LPCC"),                    DataType::Lpcc},
+        {QStringLiteral("LPC 合成语音"),             DataType::LpcReconstructed},
+        {QStringLiteral("ACF 基音"),                DataType::PitchAcf},
+        {QStringLiteral("AMDF 基音"),               DataType::PitchAmdf},
+        {QStringLiteral("倒谱法基音"),                 DataType::PitchCep},
+        {QStringLiteral("参考程序端点检测"),         DataType::Vad},
+        {QStringLiteral("倒谱端点检测"),             DataType::CepstralVad},
+        {QStringLiteral("语谱图"),                   DataType::Spectrogram},
     }) { addCurveMenu->addAction(l, [this, d] { addCurveForSelected(d); }); }
     addCurveBtn->setMenu(addCurveMenu);
     toolbar->addWidget(addCurveBtn);
@@ -162,9 +180,9 @@ void MainWindow::setupUi() {
     auto* navBar = new QToolBar(QStringLiteral("Pages"));
     navBar->setMovable(false);
     navBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    QAction* homeAct = navBar->addAction(QStringLiteral("Home"));
-    QAction* infoAct = navBar->addAction(QStringLiteral("Info"));
-    QAction* ctrlAct = navBar->addAction(QStringLiteral("Control"));
+    QAction* homeAct = navBar->addAction(QStringLiteral("关于"));
+    QAction* infoAct = navBar->addAction(QStringLiteral("文件信息"));
+    QAction* ctrlAct = navBar->addAction(QStringLiteral("操作面板"));
 
     auto setPage = [this, homeAct, infoAct, ctrlAct](int idx) {
         m_panelStack->setCurrentIndex(idx);
@@ -178,31 +196,100 @@ void MainWindow::setupUi() {
     connect(homeAct, &QAction::triggered, this, [=]() { setPage(0); });
     connect(infoAct, &QAction::triggered, this, [=]() { setPage(1); });
     connect(ctrlAct, &QAction::triggered, this, [=]() { setPage(2); });
-    setPage(0); // default: home
+    setPage(2); // 参考程序默认显示底部操作面板
 
     addToolBar(Qt::BottomToolBarArea, navBar);
 }
 
 void MainWindow::setupMenus() {
-    auto* fileMenu = menuBar()->addMenu(QStringLiteral("&File"));
-    fileMenu->addAction(QStringLiteral("&Open..."), QKeySequence::Open,
+    auto* fileMenu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
+    fileMenu->addAction(QStringLiteral("打开多个文件..."), QKeySequence::Open,
                         this, &MainWindow::onOpenFile);
+    for (int slot = 0; slot < 3; ++slot)
+        fileMenu->addAction(QStringLiteral("打开文件 %1...").arg(slot + 1),
+                            this, [this, slot] { openIntoSlot(slot); });
+    fileMenu->addAction(QStringLiteral("合并文件 1 和 2..."),
+                        this, &MainWindow::linkFirstTwoFiles);
     fileMenu->addSeparator();
-    fileMenu->addAction(QStringLiteral("&Quit"), QKeySequence::Quit,
+    for (int slot = 0; slot < 3; ++slot)
+        fileMenu->addAction(QStringLiteral("文件 %1 选区另存为...").arg(slot + 1),
+                            this, [this, slot] { saveSlot(slot); });
+    fileMenu->addAction(QStringLiteral("导出当前图表..."), this, &MainWindow::exportChart);
+    fileMenu->addSeparator();
+    fileMenu->addAction(QStringLiteral("退出"), QKeySequence::Quit,
                         qApp, &QApplication::quit);
 
-    auto* viewMenu = menuBar()->addMenu(QStringLiteral("&View"));
-    viewMenu->addAction(QStringLiteral("Reset View"), this, [this]() {
+    auto addCurveMenu = [this](QMenu* menu,
+                              std::initializer_list<std::pair<const char*, DataType>> entries) {
+        for (const auto& [label, type] : entries) {
+            auto* action = menu->addAction(QString::fromUtf8(label));
+            action->setCheckable(true);
+            connect(action, &QAction::toggled, this,
+                    [this, type](bool checked) { toggleCurveForSelected(type, checked); });
+        }
+    };
+
+    auto* timeMenu = menuBar()->addMenu(QStringLiteral("时域分析"));
+    addCurveMenu(timeMenu, {
+        {"短时能量", DataType::Energy}, {"短时过零率", DataType::ZeroCrossingRate},
+        {"平均振幅", DataType::AvgAmplitude}, {"修正自相关函数", DataType::AutoCorrelation},
+        {"ACF 基音周期", DataType::PitchAcf}, {"AMDF 基音周期", DataType::PitchAmdf},
+        {"倒谱法基音周期", DataType::PitchCep},
+    });
+
+    auto* frequencyMenu = menuBar()->addMenu(QStringLiteral("频域分析"));
+    addCurveMenu(frequencyMenu, {
+        {"幅度谱", DataType::Spectrum}, {"功率谱", DataType::PowerSpectrum},
+        {"对数功率谱", DataType::LogSpectrum}, {"倒谱", DataType::Cepstrum},
+        {"频谱的频谱", DataType::SpectrumFFT}, {"Mel 频谱", DataType::MelSpectrum},
+        {"MFCC", DataType::Mfcc}, {"LPC", DataType::Lpc}, {"LPCC", DataType::Lpcc},
+        {"LPC 合成语音", DataType::LpcReconstructed},
+    });
+    frequencyMenu->addSeparator();
+    frequencyMenu->addAction(QStringLiteral("保存有效帧 MFCC..."),
+                             this, &MainWindow::exportEffectiveMfcc);
+
+    auto* endpointMenu = menuBar()->addMenu(QStringLiteral("端点检测"));
+    addCurveMenu(endpointMenu, {
+        {"能量 + 过零率双门限（参考程序）", DataType::Vad},
+        {"倒谱端点检测", DataType::CepstralVad},
+    });
+
+    auto* displayMenu = menuBar()->addMenu(QStringLiteral("显示"));
+    addCurveMenu(displayMenu, {
+        {"语音波形", DataType::Audio}, {"左声道", DataType::AudioLeft},
+        {"右声道", DataType::AudioRight}, {"语谱图", DataType::Spectrogram},
+    });
+    displayMenu->addAction(QStringLiteral("取消选区"), m_chartWidget, &ChartWidget::clearSelection);
+
+    auto* frameMenu = menuBar()->addMenu(QStringLiteral("帧长设置"));
+    auto* frameGroup = new QActionGroup(this);
+    for (int size : {256, 512, 1024}) {
+        auto* action = frameMenu->addAction(QString::number(size));
+        action->setCheckable(true);
+        action->setChecked(size == m_controlPanel->globalFrameSize());
+        frameGroup->addAction(action);
+        connect(action, &QAction::triggered, this,
+                [this, size] { onGlobalFrameSizeChanged(size); });
+    }
+
+    auto* speakerMenu = menuBar()->addMenu(QStringLiteral("说话人"));
+    speakerMenu->addAction(QStringLiteral("说话人识别 / 确认..."), this, [this] {
+        SpeakerDialog dialog(this);
+        dialog.exec();
+    });
+
+    auto* viewMenu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
+    viewMenu->addAction(QStringLiteral("还原位置"), this, [this]() {
         m_chartWidget->setXRange(0, 10000);
         m_chartWidget->setYRange(-0.5, 0.5);
     });
 
-    auto* helpMenu = menuBar()->addMenu(QStringLiteral("&Help"));
-    helpMenu->addAction(QStringLiteral("About"), this, [this]() {
-        QMessageBox::about(this, QStringLiteral("VAD"),
-            QStringLiteral("Voice Activity Detection Analyzer\n\n"
-                           "Qt/C++ implementation based on VAD Flutter & Rust\n"
-                           "Developers: Fans963 & 津哥"));
+    auto* helpMenu = menuBar()->addMenu(QStringLiteral("帮助(&H)"));
+    helpMenu->addAction(QStringLiteral("关于 MyWave"), this, [this]() {
+        QMessageBox::about(this, QStringLiteral("关于 MyWave"),
+            QStringLiteral("MyWave 1.0\n\nQt 6 跨平台移植版\n"
+                           "功能与 MyWave VS2010 参考工程对齐。"));
     });
 }
 
@@ -213,8 +300,92 @@ void MainWindow::onOpenFile() {
         "Audio Files (*.wav *.mp3 *.flac *.aac *.ogg *.m4a);;All Files (*)");
     auto files = QFileDialog::getOpenFileNames(this,
         QStringLiteral("Open Audio File"), QString(), filter);
-    for (const auto& f : files)
+    int nextSlot = 0;
+    for (const auto& f : files) {
         loadAudioFile(f);
+        while (nextSlot < 3 && !m_fileSlots[nextSlot].isEmpty()) ++nextSlot;
+        if (nextSlot < 3) m_fileSlots[nextSlot++] = f;
+    }
+}
+
+void MainWindow::openIntoSlot(int slot) {
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("打开文件 %1").arg(slot + 1), QString(),
+        QStringLiteral("音频文件 (*.wav *.mp3 *.flac *.aac *.ogg *.m4a);;所有文件 (*)"));
+    if (path.isEmpty()) return;
+    loadAudioFile(path);
+    m_fileSlots[slot] = path;
+    m_fileSelector->setCurrentIndex(m_fileSelector->findData(path));
+}
+
+void MainWindow::saveSlot(int slot) {
+    const QString source = m_fileSlots[slot];
+    if (source.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("文件未打开"),
+                             QStringLiteral("请先打开文件 %1。").arg(slot + 1));
+        return;
+    }
+    QString output = QFileDialog::getSaveFileName(
+        this, QStringLiteral("文件 %1 另存为").arg(slot + 1),
+        QFileInfo(source).completeBaseName() + QStringLiteral("_selection.wav"),
+        QStringLiteral("WAV 音频 (*.wav)"));
+    if (output.isEmpty()) return;
+    if (!output.endsWith(QStringLiteral(".wav"), Qt::CaseInsensitive)) output += QStringLiteral(".wav");
+
+    const auto range = m_chartWidget->selectionRange();
+    const uint64_t first = range.first >= 0.0 ? uint64_t(range.first) : 0;
+    const uint64_t last = range.second > range.first
+        ? uint64_t(range.second) : std::numeric_limits<uint64_t>::max();
+    if (!m_engine->saveWavSegment(source, output, first, last))
+        QMessageBox::critical(this, QStringLiteral("保存失败"), QStringLiteral("无法保存 WAV 文件。"));
+    else
+        statusBar()->showMessage(QStringLiteral("已保存：%1").arg(output), 5000);
+}
+
+void MainWindow::linkFirstTwoFiles() {
+    if (m_fileSlots[0].isEmpty() || m_fileSlots[1].isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("无法合并"),
+                             QStringLiteral("请先打开文件 1 和文件 2。"));
+        return;
+    }
+    QString output = QFileDialog::getSaveFileName(this, QStringLiteral("合并文件 1 和 2"),
+                                                   QStringLiteral("linked.wav"),
+                                                   QStringLiteral("WAV 音频 (*.wav)"));
+    if (output.isEmpty()) return;
+    if (!output.endsWith(QStringLiteral(".wav"), Qt::CaseInsensitive)) output += QStringLiteral(".wav");
+    if (!m_engine->concatenate(m_fileSlots[0], m_fileSlots[1], output)) {
+        QMessageBox::critical(this, QStringLiteral("合并失败"),
+                              QStringLiteral("两个文件的采样率必须相同。"));
+        return;
+    }
+    loadAudioFile(output);
+    m_fileSlots[2] = output;
+    statusBar()->showMessage(QStringLiteral("已合并为文件 3：%1").arg(output), 5000);
+}
+
+void MainWindow::exportChart() {
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("导出当前图表"), QStringLiteral("MyWave.png"),
+        QStringLiteral("PNG 图片 (*.png);;PDF 文档 (*.pdf)"));
+    if (path.isEmpty()) return;
+    const bool ok = path.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive)
+        ? m_chartWidget->savePdf(path) : m_chartWidget->savePng(path);
+    if (!ok)
+        QMessageBox::critical(this, QStringLiteral("导出失败"), QStringLiteral("无法写入所选文件。"));
+}
+
+void MainWindow::exportEffectiveMfcc() {
+    const QString source = currentFilePath();
+    if (source.isEmpty()) return;
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存有效帧 MFCC"),
+        QFileInfo(source).completeBaseName() + QStringLiteral("_effective_mfcc.tsv"),
+        QStringLiteral("TSV 数据 (*.tsv *.txt)"));
+    if (path.isEmpty()) return;
+    if (!m_engine->exportEffectiveMfcc(source, path))
+        QMessageBox::critical(this, QStringLiteral("导出失败"), QStringLiteral("无法写入 MFCC 数据。"));
+    else
+        statusBar()->showMessage(QStringLiteral("已保存有效帧 MFCC：%1").arg(path), 5000);
 }
 
 void MainWindow::loadAudioFile(const QString& filePath, const QByteArray& data) {
@@ -233,6 +404,11 @@ void MainWindow::loadAudioFile(const QString& filePath, const QByteArray& data) 
 
     // Update info panel
     auto info = m_engine->getAudioInfo(filePath);
+    if (info.sampleRate == 0 || info.sampleCount == 0) {
+        QMessageBox::critical(this, QStringLiteral("打开失败"),
+                              QStringLiteral("无法解码音频文件：\n%1").arg(filePath));
+        return;
+    }
     m_audioInfoMap[filePath] = info;
     m_infoPanel->setAudioInfoMap(m_audioInfoMap);
 
@@ -259,6 +435,18 @@ void MainWindow::addCurveForSelected(DataType dt) {
         m_engine->removeChart(fp, DataType::CepstralVad);
     }
     m_engine->addChart(fp, dt);
+}
+
+void MainWindow::toggleCurveForSelected(DataType dt, bool visible) {
+    const auto filePath = currentFilePath();
+    if (filePath.isEmpty()) return;
+    if (visible) {
+        m_engine->setChartVisibility(filePath, dt, true);
+        m_engine->addChart(filePath, dt);
+    } else {
+        m_chartWidget->setSeriesVisible(filePath, dt, false);
+        m_engine->setChartVisibility(filePath, dt, false);
+    }
 }
 
 void MainWindow::refreshFileSelector() {
@@ -319,12 +507,17 @@ void MainWindow::onViewRangeChanged() {
 }
 
 void MainWindow::onGlobalFrameSizeChanged(int newSize) {
+    m_controlPanel->setGlobalFrameSize(newSize);
     m_engine->setConfig({newSize, m_engine->config().downSamplePointsNum});
     m_chartWidget->setFrameGrid(newSize);
 }
 
 void MainWindow::onPlayAudio(const QString& filePath, double startFraction) {
-    m_engine->playAudio(filePath, startFraction);
+    const auto range = m_chartWidget->selectionRange();
+    if (range.first >= 0.0 && range.second > range.first)
+        m_engine->playAudioRange(filePath, uint64_t(range.first), uint64_t(range.second));
+    else
+        m_engine->playAudio(filePath, startFraction);
 }
 void MainWindow::onStopAudio() { m_engine->stopAudio(); }
 

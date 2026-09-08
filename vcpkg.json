@@ -1,22 +1,8 @@
 {
+  "$comment": "Qt6 (qtbase + qtmultimedia) is intentionally NOT managed by vcpkg — it is linked against the system Qt6 installation (apt/pacman) to avoid the multi-hour vcpkg rebuild of Qt.",
   "name": "mywave-qt",
   "version": "1.0.0",
   "dependencies": [
-    {
-      "name": "qtbase",
-      "default-features": false,
-      "features": ["concurrent", "gui", "opengl", "widgets"]
-    },
-    {
-      "name": "qtbase",
-      "default-features":false,
-      "platform": "linux",
-      "features": ["fontconfig", "wayland"]
-    },
-    {
-      "name": "qtmultimedia",
-      "default-features": false
-    },
     "libsndfile",
     {
       "name": "fftw3",

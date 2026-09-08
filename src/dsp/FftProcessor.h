@@ -25,6 +25,9 @@ public:
     // Cepstrum (FFT of log amplitude spectrum)
     QVector<float> computeCepstrum(const QVector<float>& logMagnitudes);
 
+    // Real cepstrum: IFFT(log(|FFT(x)|)).
+    QVector<float> computeRealCepstrum(const QVector<float>& timeData);
+
     // Mel-scale spectrum
     static QVector<float> computeMelSpectrum(const QVector<float>& magnitudes,
                                               int sampleRate, int numFilters = 24);

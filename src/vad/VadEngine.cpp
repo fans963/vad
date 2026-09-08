@@ -12,10 +12,11 @@ namespace {
     }
 }
 
-VadEngine::VadEngine() : m_algo(EnergyVad{}) {}
+VadEngine::VadEngine() : m_algo(ReferenceVad{}) {}
 
 QStringList VadEngine::listAlgorithms() const {
-    return {QStringLiteral("energy"), QStringLiteral("zcr"), QStringLiteral("cepstral")};
+    return {QStringLiteral("reference"), QStringLiteral("energy"),
+            QStringLiteral("zcr"), QStringLiteral("cepstral")};
 }
 
 QString VadEngine::currentName() const {
@@ -23,7 +24,8 @@ QString VadEngine::currentName() const {
 }
 
 void VadEngine::setAlgorithm(const QString& name) {
-    if (name == QLatin1String("zcr")) m_algo = ZcrVad{};
+    if (name == QLatin1String("reference")) m_algo = ReferenceVad{};
+    else if (name == QLatin1String("zcr")) m_algo = ZcrVad{};
     else if (name == QLatin1String("cepstral")) m_algo = CepstralVad{};
     else m_algo = EnergyVad{};
 }

@@ -31,46 +31,46 @@ void ControlPanel::setupUi() {
     auto* layout = new QVBoxLayout(w);
 
     // ── Series selector ──────────────────────────────────────────────────
-    auto* seriesGroup = new QGroupBox(QStringLiteral("Curve Management"));
+    auto* seriesGroup = new QGroupBox(QStringLiteral("曲线管理"));
     auto* sgLayout = new QVBoxLayout(seriesGroup);
 
     auto* selRow = new QHBoxLayout;
-    selRow->addWidget(new QLabel(QStringLiteral("Select:")));
+    selRow->addWidget(new QLabel(QStringLiteral("选择：")));
     m_seriesCombo = new QComboBox;
     m_seriesCombo->setMinimumWidth(150);
     selRow->addWidget(m_seriesCombo, 1);
     sgLayout->addLayout(selRow);
 
     auto* btnRow = new QHBoxLayout;
-    m_colorBtn = new QPushButton(QStringLiteral("Color"));
+    m_colorBtn = new QPushButton(QStringLiteral("颜色"));
     m_colorBtn->setMaximumWidth(60);
     btnRow->addWidget(m_colorBtn);
-    m_visibleBtn = new QPushButton(QStringLiteral("Show/Hide"));
+    m_visibleBtn = new QPushButton(QStringLiteral("显示/隐藏"));
     m_visibleBtn->setMaximumWidth(80);
     btnRow->addWidget(m_visibleBtn);
-    m_playBtn = new QPushButton(QStringLiteral("Play"));
+    m_playBtn = new QPushButton(QStringLiteral("播放选区"));
     btnRow->addWidget(m_playBtn);
-    m_stopBtn = new QPushButton(QStringLiteral("Stop"));
+    m_stopBtn = new QPushButton(QStringLiteral("停止"));
     btnRow->addWidget(m_stopBtn);
-    m_deleteBtn = new QPushButton(QStringLiteral("Delete"));
+    m_deleteBtn = new QPushButton(QStringLiteral("删除曲线"));
     m_deleteBtn->setStyleSheet("color: red;");
     btnRow->addWidget(m_deleteBtn);
     sgLayout->addLayout(btnRow);
     layout->addWidget(seriesGroup);
 
     // ── Axis controls ─────────────────────────────────────────────────────
-    auto* axisGroup = new QGroupBox(QStringLiteral("Axis Controls"));
+    auto* axisGroup = new QGroupBox(QStringLiteral("坐标轴控制"));
     auto* agLayout = new QVBoxLayout(axisGroup);
 
     // X-axis
-    agLayout->addWidget(new QLabel(QStringLiteral("X-Axis Position (scroll):")));
+    agLayout->addWidget(new QLabel(QStringLiteral("X 轴显示位置：")));
     m_xPosSlider = new QSlider(Qt::Horizontal);
     m_xPosSlider->setRange(0, 1000);
     m_xPosSlider->setValue(500);
     agLayout->addWidget(m_xPosSlider);
 
     auto* xzRow = new QHBoxLayout;
-    xzRow->addWidget(new QLabel(QStringLiteral("X Zoom:")));
+    xzRow->addWidget(new QLabel(QStringLiteral("X 轴缩放：")));
     m_xZoomSlider = new QSlider(Qt::Horizontal);
     m_xZoomSlider->setRange(1, 1000);
     m_xZoomSlider->setValue(1000);
@@ -83,7 +83,7 @@ void ControlPanel::setupUi() {
 
     // Y-axis
     auto* yzRow = new QHBoxLayout;
-    yzRow->addWidget(new QLabel(QStringLiteral("Y Zoom:")));
+    yzRow->addWidget(new QLabel(QStringLiteral("Y 轴缩放：")));
     m_yZoomSlider = new QSlider(Qt::Horizontal);
     m_yZoomSlider->setRange(10, 1000);
     m_yZoomSlider->setValue(100);
@@ -94,7 +94,7 @@ void ControlPanel::setupUi() {
     yzRow->addWidget(m_yZoomEdit);
     agLayout->addLayout(yzRow);
 
-    agLayout->addWidget(new QLabel(QStringLiteral("Y-Axis Position:")));
+    agLayout->addWidget(new QLabel(QStringLiteral("Y 轴显示位置：")));
     m_yPosSlider = new QSlider(Qt::Horizontal);
     m_yPosSlider->setRange(0, 1000);
     m_yPosSlider->setValue(500);
@@ -108,13 +108,13 @@ void ControlPanel::setupUi() {
     layout->addWidget(axisGroup);
 
     // ── Frame size ────────────────────────────────────────────────────────
-    auto* frameGroup = new QGroupBox(QStringLiteral("Global Frame Size"));
+    auto* frameGroup = new QGroupBox(QStringLiteral("全局帧长"));
     auto* fgLayout = new QHBoxLayout(frameGroup);
     m_frameSizeSlider = new QSlider(Qt::Horizontal);
     m_frameSizeSlider->setRange(6, 12); // 2^6=64 to 2^12=4096 (exponential)
-    m_frameSizeSlider->setValue(8);     // 256
+    m_frameSizeSlider->setValue(9);     // 512 (reference program default)
     fgLayout->addWidget(m_frameSizeSlider, 1);
-    m_frameSizeLabel = new QLabel(QStringLiteral("256"));
+    m_frameSizeLabel = new QLabel(QStringLiteral("512"));
     m_frameSizeLabel->setFixedWidth(48);
     m_frameSizeLabel->setAlignment(Qt::AlignCenter);
     m_frameSizeLabel->setStyleSheet(QStringLiteral(
@@ -130,7 +130,7 @@ void ControlPanel::setupUi() {
     auto* vadRow = new QHBoxLayout;
     m_vadAlgoCombo = new QComboBox;
     vadRow->addWidget(m_vadAlgoCombo, 1);
-    m_vadRunBtn = new QPushButton(QStringLiteral("Run VAD"));
+    m_vadRunBtn = new QPushButton(QStringLiteral("执行端点检测"));
     vadRow->addWidget(m_vadRunBtn);
     vgLayout->addLayout(vadRow);
 
@@ -204,6 +204,15 @@ double ControlPanel::yViewMax() const {
 
 int ControlPanel::globalFrameSize() const { return 1 << m_frameSizeSlider->value(); }
 
+void ControlPanel::setGlobalFrameSize(int size) {
+    int power = 8;
+    while ((1 << power) < size && power < 10) ++power;
+    const QSignalBlocker blocker(m_frameSizeSlider);
+    m_frameSizeSlider->setValue(power);
+    m_frameSizeLabel->setText(QString::number(1 << power));
+    updateXZoomRange();
+}
+
 void ControlPanel::setChartMaxIndex(float idx) {
     m_maxIndex = idx;
     updateXZoomRange();
@@ -262,7 +271,7 @@ void ControlPanel::refreshSeriesSelector() {
     m_seriesCombo->clear();
     if (m_chartWidget) {
         auto keys = m_chartWidget->allSeriesKeys();
-        m_seriesCombo->addItem(QStringLiteral("(none)"), QString());
+        m_seriesCombo->addItem(QStringLiteral("（无）"), QString());
         for (const auto& k : keys) {
             auto [fp, dt] = parseSeriesKey(k);
             QString label = QStringLiteral("%1 - %2").arg(fp.split('/').last(),
@@ -284,7 +293,7 @@ void ControlPanel::onShowColorPicker() {
     QString key = m_seriesCombo->currentData().toString();
     if (key.isEmpty()) return;
     auto [fp, dt] = parseSeriesKey(key);
-    QColor c = QColorDialog::getColor(Qt::blue, this, QStringLiteral("Select color"));
+    QColor c = QColorDialog::getColor(Qt::blue, this, QStringLiteral("选择曲线颜色"));
     if (c.isValid()) {
         emit colorChanged(fp, dt, c);
         m_colorBtn->setStyleSheet(QStringLiteral("background-color: %1;").arg(c.name()));
@@ -295,7 +304,7 @@ void ControlPanel::onToggleVisibility() {
     QString key = m_seriesCombo->currentData().toString();
     if (key.isEmpty()) return;
     auto [fp, dt] = parseSeriesKey(key);
-    bool vis = true; // Simplification — the engine tracks actual state
+    bool vis = m_chartWidget ? m_chartWidget->isVisible(fp, dt) : true;
     emit visibilityToggled(fp, dt, !vis);
 }
 
@@ -303,8 +312,8 @@ void ControlPanel::onDeleteSelected() {
     QString key = m_seriesCombo->currentData().toString();
     if (key.isEmpty()) return;
     auto [fp, dt] = parseSeriesKey(key);
-    auto reply = QMessageBox::question(this, QStringLiteral("Confirm Delete"),
-        QStringLiteral("Delete %1 of %2?").arg(dataTypeDisplayName(dt),
+    auto reply = QMessageBox::question(this, QStringLiteral("确认删除"),
+        QStringLiteral("删除 %2 的 %1 曲线？").arg(dataTypeDisplayName(dt),
                                                 fp.split('/').last()));
     if (reply == QMessageBox::Yes)
         emit deleteSeriesRequested(fp, dt);

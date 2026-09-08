@@ -40,6 +40,12 @@ public:
     // Audio info
     AudioInfo getAudioInfo(const QString& filePath) const;
     QStringList loadedFiles() const;
+    bool saveWavSegment(const QString& filePath, const QString& outputPath,
+                        uint64_t firstSample = 0,
+                        uint64_t lastSample = std::numeric_limits<uint64_t>::max()) const;
+    bool concatenate(const QString& firstFile, const QString& secondFile,
+                     const QString& outputPath) const;
+    bool exportEffectiveMfcc(const QString& filePath, const QString& outputPath) const;
 
     // ── VAD ────────────────────────────────────────────────────────────────
     QStringList listVadAlgorithms() const;
@@ -50,6 +56,8 @@ public:
 
     // ── Audio playback ─────────────────────────────────────────────────────
     Q_INVOKABLE void playAudio(const QString& filePath, double startFraction = 0.0);
+    void playAudioRange(const QString& filePath, uint64_t firstSample,
+                        uint64_t lastSample);
     Q_INVOKABLE void resumeAudio();
     Q_INVOKABLE void pauseAudio();
     Q_INVOKABLE void stopAudio();

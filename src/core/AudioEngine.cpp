@@ -5,11 +5,15 @@
 #include "../dsp/ZeroCrossingRate.h"
 #include "../dsp/LpcProcessor.h"
 #include "../dsp/PitchDetector.h"
+#include "../dsp/FeatureExtractor.h"
 #include "../vad/CepstralVad.h"
 #include "Parallel.h"
 #include "DownSampler.h"
 
 #include <QDebug>
+#include <QFile>
+#include <QTextStream>
+#include <sndfile.h>
 
 AudioEngine::AudioEngine(QObject* parent)
     : QObject(parent)
@@ -68,6 +72,7 @@ void AudioEngine::addFile(const QString& filePath, const QByteArray& fileData,
     auto decoded = m_decoder.decode(filePath, fileData, format);
     decoded.info.filePath = filePath;
     decoded.info.format = format;
+    if (decoded.samples.isEmpty() || decoded.info.sampleRate == 0) return;
 
     qDebug() << "[ENGINE] decoded:" << decoded.samples.size() << "samples,"
              << decoded.info.sampleRate << "Hz," << decoded.info.channels << "ch";
@@ -180,6 +185,85 @@ QStringList AudioEngine::loadedFiles() const {
     return m_cache.filePaths();
 }
 
+bool AudioEngine::saveWavSegment(const QString& filePath, const QString& outputPath,
+                                 uint64_t firstSample, uint64_t lastSample) const {
+    const auto audio = m_storage.load(filePath);
+    if (!audio || audio->samples.isEmpty() || audio->info.sampleRate == 0) return false;
+    firstSample = std::min<uint64_t>(firstSample, audio->samples.size());
+    lastSample = std::min<uint64_t>(lastSample, audio->samples.size());
+    if (lastSample <= firstSample) return false;
+
+    const bool stereo = audio->info.channels >= 2
+        && audio->leftSamples.size() == audio->samples.size()
+        && audio->rightSamples.size() == audio->samples.size();
+    SF_INFO info{};
+    info.samplerate = int(audio->info.sampleRate);
+    info.channels = stereo ? 2 : 1;
+    info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+    SNDFILE* output = sf_open(outputPath.toUtf8().constData(), SFM_WRITE, &info);
+    if (!output) return false;
+
+    const qsizetype frames = qsizetype(lastSample - firstSample);
+    QVector<float> data(frames * info.channels);
+    for (qsizetype i = 0; i < frames; ++i) {
+        const qsizetype source = qsizetype(firstSample) + i;
+        if (stereo) {
+            data[i * 2] = audio->leftSamples[source];
+            data[i * 2 + 1] = audio->rightSamples[source];
+        } else {
+            data[i] = audio->samples[source];
+        }
+    }
+    const bool ok = sf_writef_float(output, data.constData(), frames) == frames;
+    sf_close(output);
+    return ok;
+}
+
+bool AudioEngine::concatenate(const QString& firstFile, const QString& secondFile,
+                              const QString& outputPath) const {
+    const auto first = m_storage.load(firstFile);
+    const auto second = m_storage.load(secondFile);
+    if (!first || !second || first->info.sampleRate != second->info.sampleRate)
+        return false;
+
+    SF_INFO info{};
+    info.samplerate = int(first->info.sampleRate);
+    info.channels = 1;
+    info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+    SNDFILE* output = sf_open(outputPath.toUtf8().constData(), SFM_WRITE, &info);
+    if (!output) return false;
+    const auto written1 = sf_writef_float(output, first->samples.constData(), first->samples.size());
+    const auto written2 = sf_writef_float(output, second->samples.constData(), second->samples.size());
+    sf_close(output);
+    return written1 == first->samples.size() && written2 == second->samples.size();
+}
+
+bool AudioEngine::exportEffectiveMfcc(const QString& filePath,
+                                      const QString& outputPath) const {
+    const auto audio = m_storage.load(filePath);
+    if (!audio) return false;
+    ReferenceVad detector;
+    const auto vad = detector.process(audio->samples, audio->info.sampleRate, m_config.frameSize);
+    const auto frames = frameSignal(audio->samples, m_config.frameSize, true, true, 0.95f);
+    QFile file(outputPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) return false;
+    QTextStream stream(&file);
+    stream << "frame";
+    for (int coefficient = 0; coefficient < 13; ++coefficient)
+        stream << '\t' << "mfcc_" << coefficient;
+    stream << '\n';
+    const int count = std::min(frames.size(), vad.confidence.size());
+    for (int i = 0; i < count; ++i) {
+        if (vad.confidence[i] < 0.5f) continue;
+        FftProcessor fft(m_config.frameSize);
+        const auto mfcc = fft.computeMFCC(frames[i], audio->info.sampleRate, 24, 13);
+        stream << i;
+        for (float value : mfcc) stream << '\t' << value;
+        stream << '\n';
+    }
+    return stream.status() == QTextStream::Ok;
+}
+
 // ── VAD ─────────────────────────────────────────────────────────────────────
 
 QStringList AudioEngine::listVadAlgorithms() const { return m_vad.listAlgorithms(); }
@@ -208,6 +292,14 @@ void AudioEngine::playAudio(const QString& filePath, double startFraction) {
     m_player.play(start);
 }
 
+void AudioEngine::playAudioRange(const QString& filePath, uint64_t firstSample,
+                                 uint64_t lastSample) {
+    const auto audio = m_storage.load(filePath);
+    if (!audio) return;
+    m_player.load(*audio);
+    m_player.play(firstSample, lastSample);
+}
+
 void AudioEngine::resumeAudio() { m_player.resume(); }
 void AudioEngine::pauseAudio() { m_player.pause(); }
 void AudioEngine::stopAudio() { m_player.stop(); }
@@ -234,6 +326,10 @@ void AudioEngine::recomputeRanges() {
     bool found = false;
 
     for (const auto& [key, chart] : visible) {
+        if (chart.dataType == DataType::Spectrogram) {
+            maxIdx = std::max(maxIdx, chart.heatXMax);
+            continue;
+        }
         found = true;
         yMin = std::min(yMin, chart.minY);
         yMax = std::max(yMax, chart.maxY);
@@ -244,8 +340,9 @@ void AudioEngine::recomputeRanges() {
     if (found && yMin <= yMax) {
         m_yMin = yMin;
         m_yMax = yMax;
-        m_maxIndex = std::ceil(maxIdx / m_config.frameSize) * m_config.frameSize;
     }
+    if (maxIdx > 0.0f)
+        m_maxIndex = std::ceil(maxIdx / m_config.frameSize) * m_config.frameSize;
 }
 
 void AudioEngine::syncToUi() {
@@ -307,49 +404,13 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
     chart.dataType = dt;
 
     switch (dt) {
-    case DataType::Spectrum: {
-        auto& samples = audio->samples;
-        int hopSize = m_config.frameSize / 2;
-        int nFrames = (samples.size() - m_config.frameSize) / hopSize + 1;
-        if (nFrames <= 0) break;
-
-        // Pre-build windowed frames (parallel for speed)
-        QVector<QVector<float>> frames(nFrames);
-        parallelFor(nFrames, [&](int f) {
-            int start = f * hopSize;
-            QVector<float> frame(m_config.frameSize);
-            for (int j = 0; j < m_config.frameSize; ++j) {
-                float w = 0.54f - 0.46f * std::cos(2.0f * M_PI * j / (m_config.frameSize - 1));
-                frame[j] = samples[start + j] * w;
-            }
-            frames[f] = std::move(frame);
-        });
-
-        // Per-frame parallel FFT — each thread gets its own FftProcessor+plan
-        auto allMags = parallelMap(frames, [&](const QVector<float>& frame) {
-            FftProcessor fft(m_config.frameSize);
-            return fft.computeMagnitudeSpectrum(frame);
-        });
-
-        // Concatenate
-        QVector<ChartPoint> pts;
-        pts.reserve(nFrames * hopSize);
-        float minY = std::numeric_limits<float>::max();
-        float maxY = std::numeric_limits<float>::lowest();
-
-        for (int f = 0; f < nFrames; ++f) {
-            const auto& mags = allMags[f];
-            int limit = std::min((int)mags.size(), hopSize);
-            for (int j = 0; j < limit; ++j) {
-                float y = mags[j];
-                pts.append({float(f * hopSize + j), y});
-                minY = std::min(minY, y);
-                maxY = std::max(maxY, y);
-            }
-        }
-        chart.points = std::move(pts);
-        chart.minY = minY;
-        chart.maxY = maxY;
+    case DataType::Spectrum:
+    case DataType::PowerSpectrum:
+    case DataType::LogSpectrum:
+    case DataType::Cepstrum:
+    case DataType::MelSpectrum: {
+        chart = FeatureExtractor::spectrum(audio->samples, m_config.frameSize,
+                                           dt, audio->info.sampleRate);
         break;
     }
     case DataType::Energy: {
@@ -393,24 +454,8 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
         break;
     }
     case DataType::SpectrumFFT: {
-        // FFT of magnitude spectrum — compute Spectrum first, then FFT each frame
-        auto frames = frameSignal(audio->samples, m_config.frameSize, true, true);
-        int hopSize = m_config.frameSize / 2;
-        QVector<ChartPoint> pts;
-        float minY = 1e30f, maxY = -1e30f;
-        for (int i = 0; i < frames.size(); ++i) {
-            FftProcessor fft1(m_config.frameSize);
-            auto mags = fft1.computeMagnitudeSpectrum(frames[i]);
-            FftProcessor fft2(mags.size());
-            auto specFft = fft2.computeMagnitudeSpectrum(mags);
-            int limit = std::min((int)specFft.size(), hopSize);
-            for (int j = 0; j < limit; ++j) {
-                float y = specFft[j];
-                pts.append({float(i * hopSize + j), y});
-                minY = std::min(minY, y); maxY = std::max(maxY, y);
-            }
-        }
-        chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;
+        chart = FeatureExtractor::spectrum(audio->samples, m_config.frameSize,
+                                           dt, audio->info.sampleRate);
         break;
     }
     case DataType::AutoCorrelation: {
@@ -428,35 +473,15 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
         chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;
         break;
     }
-    case DataType::Lpc: {
-        auto frames = frameSignal(audio->samples, m_config.frameSize, true, true);
-        int hopSize = m_config.frameSize / 2;
-        QVector<ChartPoint> pts;
-        float minY = 1e30f, maxY = -1e30f;
-        for (int i = 0; i < frames.size(); ++i) {
-            auto lpc = computeLPC(frames[i], 13);
-            for (int j = 0; j < lpc.size(); ++j) {
-                pts.append({float(i * hopSize + j), lpc[j]});
-                minY = std::min(minY, lpc[j]); maxY = std::max(maxY, lpc[j]);
-            }
-        }
-        chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;
+    case DataType::Lpc:
+    case DataType::Lpcc:
+    case DataType::Mfcc: {
+        chart = FeatureExtractor::coefficients(audio->samples, m_config.frameSize,
+                                               dt, audio->info.sampleRate);
         break;
     }
-    case DataType::Lpcc: {
-        auto frames = frameSignal(audio->samples, m_config.frameSize, true, true);
-        int hopSize = m_config.frameSize / 2;
-        QVector<ChartPoint> pts;
-        float minY = 1e30f, maxY = -1e30f;
-        for (int i = 0; i < frames.size(); ++i) {
-            auto lpc = computeLPC(frames[i], 13);
-            auto lpcc = lpcToLpcc(lpc, 13);
-            for (int j = 0; j < lpcc.size(); ++j) {
-                pts.append({float(i * hopSize + j), lpcc[j]});
-                minY = std::min(minY, lpcc[j]); maxY = std::max(maxY, lpcc[j]);
-            }
-        }
-        chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;
+    case DataType::LpcReconstructed: {
+        chart = FeatureExtractor::reconstructLpc(audio->samples, m_config.frameSize);
         break;
     }
     case DataType::PitchAcf:
@@ -492,21 +517,23 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
         break;
     }
     case DataType::Spectrogram: {
-        // Spectrogram — 2D heatmap, compute but use via dedicated UI. Store as flat chart points.
-        auto frames = frameSignal(audio->samples, m_config.frameSize, true, true);
-        int hopSize = m_config.frameSize / 2;
-        QVector<ChartPoint> pts;
-        float minY = 1e30f, maxY = -1e30f;
-        for (int i = 0; i < frames.size(); ++i) {
-            FftProcessor fft(m_config.frameSize);
-            auto mags = fft.computeMagnitudeSpectrum(frames[i]);
-            for (int j = 0; j < mags.size(); ++j) {
-                float db = mags[j] > 0 ? 20.0f * std::log10(mags[j] + 1e-10f) : -120.0f;
-                pts.append({float(i * hopSize + j), db});
-                minY = std::min(minY, db); maxY = std::max(maxY, db);
-            }
+        chart = FeatureExtractor::spectrogram(audio->samples, m_config.frameSize,
+                                              audio->info.sampleRate);
+        break;
+    }
+    case DataType::AudioLeft:
+    case DataType::AudioRight: {
+        const auto& samples = dt == DataType::AudioLeft
+            ? audio->leftSamples : audio->rightSamples;
+        if (samples.isEmpty()) break;
+        chart.points.resize(samples.size());
+        chart.minY = std::numeric_limits<float>::max();
+        chart.maxY = std::numeric_limits<float>::lowest();
+        for (int i = 0; i < samples.size(); ++i) {
+            chart.points[i] = {float(i), samples[i]};
+            chart.minY = std::min(chart.minY, samples[i]);
+            chart.maxY = std::max(chart.maxY, samples[i]);
         }
-        chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;
         break;
     }
     case DataType::Audio:

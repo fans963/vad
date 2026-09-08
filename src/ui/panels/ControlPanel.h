@@ -29,6 +29,7 @@ public:
     double yViewMax() const;
 
     int globalFrameSize() const;
+    void setGlobalFrameSize(int size);
 
     void setChartMaxIndex(float idx);
     void setAutoYRange(float yMin, float yMax);

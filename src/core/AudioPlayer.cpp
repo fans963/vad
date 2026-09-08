@@ -13,18 +13,19 @@ void AudioPlayer::load(const AudioData& audio) {
     stop();
     m_audio = audio;
 
-    m_format.setSampleRate(audio.info.sampleRate);
+    m_format.setSampleRate(std::max(1, int(audio.info.sampleRate * m_speed)));
     m_format.setChannelCount(std::min<uint16_t>(audio.info.channels, 2));
     m_format.setSampleFormat(QAudioFormat::Float);
 }
 
-void AudioPlayer::play(uint64_t startSample) {
+void AudioPlayer::play(uint64_t startSample, uint64_t endSample) {
     if (m_audio.samples.isEmpty() || m_playing) return;
 
     m_startSample = std::min(startSample, (uint64_t)m_audio.samples.size());
+    m_endSample = std::clamp(endSample, m_startSample, uint64_t(m_audio.samples.size()));
 
     int channels = m_format.channelCount();
-    size_t totalSamples = (size_t)m_audio.samples.size() - m_startSample;
+    size_t totalSamples = m_endSample - m_startSample;
     QByteArray pcmData(static_cast<int>(totalSamples * channels * sizeof(float)), Qt::Uninitialized);
     float* dst = reinterpret_cast<float*>(pcmData.data());
 
@@ -72,18 +73,28 @@ void AudioPlayer::stop() {
     m_buffer.reset();
     m_playing = false;
     m_startSample = 0;
+    m_endSample = 0;
 }
 
-void AudioPlayer::seek(uint64_t) {
-    // Re-create from new position
+void AudioPlayer::seek(uint64_t sample) {
     bool wasPlaying = m_playing;
     stop();
-    // Seeking not fully supported via QAudioSink — restart play at new position
-    (void)wasPlaying;
+    m_startSample = std::min(sample, uint64_t(m_audio.samples.size()));
+    if (wasPlaying)
+        play(m_startSample);
+    else
+        emitState();
 }
 
 void AudioPlayer::setSpeed(float m) {
+    const bool wasPlaying = m_playing;
+    const uint64_t position = uint64_t(positionSecs() * m_audio.info.sampleRate);
     m_speed = std::clamp(m, 0.25f, 4.0f);
+    m_format.setSampleRate(std::max(1, int(m_audio.info.sampleRate * m_speed)));
+    if (wasPlaying) {
+        stop();
+        play(position);
+    }
 }
 
 bool AudioPlayer::isPlaying() const { return m_playing; }
@@ -98,9 +109,9 @@ float AudioPlayer::positionSecs() const {
     if (m_audio.info.sampleRate == 0) return 0.0f;
     uint64_t elapsed = 0;
     if (m_sink && m_playing) {
-        // Estimate from bytes written vs bytes processed
         if (m_buffer)
-            elapsed = m_sink->elapsedUSecs() / 1000 * m_audio.info.sampleRate / 1000;
+            elapsed = uint64_t(m_sink->processedUSecs() * m_audio.info.sampleRate
+                               * m_speed / 1000000.0);
     }
     uint64_t total = m_startSample + elapsed;
     if (m_audio.info.sampleRate > 0)
@@ -129,6 +140,6 @@ void AudioPlayer::emitState() {
     ps.isPlaying = m_playing;
     ps.position = positionSecs();
     ps.duration = durationSecs();
-    float chartPos = ps.position; // Simplified
+    const float chartPos = ps.position * m_audio.info.sampleRate;
     emit playbackStateChanged(ps, chartPos);
 }

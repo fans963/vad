@@ -19,15 +19,16 @@ VadResult CepstralVad::process(const QVector<float>& samples, uint32_t /*sr*/,
     for (int f = 0; f < nFrames; ++f) {
         // Energy check
         float energy = 0.0f;
-        for (int j = 0; j < frames[f].size(); ++j)
-            energy += frames[f][j] * frames[f][j];
+        for (int j = 0; j < frames[f].size(); ++j) {
+            const float sample = frames[f][j] * 32768.0f;
+            energy += sample * sample;
+        }
         float energyDB = 10.0f * std::log10(energy / frameSize + 1e-12f);
         if (energyDB < energyThresholdDB) continue;
 
         // Cepstrum
-        auto logMag = FftProcessor::computeLogAmplitudeSpectrum(frames[f]);
-        FftProcessor fftCep(logMag.size());
-        auto cep = fftCep.computeMagnitudeSpectrum(logMag);
+        FftProcessor fftCep(frameSize);
+        auto cep = fftCep.computeRealCepstrum(frames[f]);
 
         // Find median of cepstral values (ignoring first 33 points for DC)
         QVector<float> vals;

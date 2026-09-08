@@ -48,13 +48,19 @@ AudioData AudioDecoder::decodeFile(const QString& filePath)
         return result;
     }
 
-    // Mix down to mono
+    // Keep the original stereo channels (the reference program draws them
+    // separately) and also retain a mono mix for all analysis algorithms.
     result.samples.resize(read);
+    if (channels >= 1) result.leftSamples.resize(read);
+    if (channels >= 2) result.rightSamples.resize(read);
     for (sf_count_t i = 0; i < read; ++i) {
         float sum = 0.0f;
         for (int ch = 0; ch < channels; ++ch)
             sum += interleaved[i * channels + ch];
         result.samples[i] = sum / (float)channels;
+        result.leftSamples[i] = interleaved[i * channels];
+        if (channels >= 2)
+            result.rightSamples[i] = interleaved[i * channels + 1];
     }
 
     result.info.filePath = filePath;

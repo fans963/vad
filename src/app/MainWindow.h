@@ -21,6 +21,11 @@ protected:
 
 private slots:
     void onOpenFile();
+    void openIntoSlot(int slot);
+    void saveSlot(int slot);
+    void linkFirstTwoFiles();
+    void exportChart();
+    void exportEffectiveMfcc();
     void onChartEvent(const ChartEvent& event);
     void onViewRangeChanged();
     void onGlobalFrameSizeChanged(int newSize);
@@ -39,6 +44,7 @@ private:
     void loadAudioFile(const QString& filePath, const QByteArray& data = {});
     QString currentFilePath() const;
     void addCurveForSelected(DataType dt);
+    void toggleCurveForSelected(DataType dt, bool visible);
     void refreshFileSelector();
 
     AudioEngine* m_engine = nullptr;
@@ -50,4 +56,5 @@ private:
 
     // Audio info tracking
     QHash<QString, AudioInfo> m_audioInfoMap;
+    QString m_fileSlots[3];
 };

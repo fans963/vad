@@ -1,0 +1,699 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(简体，中国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)\r\n"
+    "LANGUAGE 4, 2\r\n"
+    "#pragma code_page(936)\r\n"
+    "#include ""res\\MyWave.rc2""  // 非 Microsoft Visual C++ 编辑的资源\r\n"
+    "#include ""afxres.rc""         // 标准组件\r\n"
+    "#include ""afxprint.rc""       // 打印/打印预览资源\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\MyWave.ico"
+IDR_MyWaveTYPE          ICON                    "res\\MyWaveDoc.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDR_MAINFRAME           BITMAP                  "res\\Toolbar.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Toolbar
+//
+
+IDR_MAINFRAME TOOLBAR 30, 14
+BEGIN
+    BUTTON      ID_FILE_NEW
+    BUTTON      ID_FILE1_OPEN
+    BUTTON      ID_FILE2_OPEN
+    BUTTON      ID_FILE3_OPEN
+    BUTTON      ID_FILE1_SAVE_AS
+    BUTTON      ID_FILE2_SAVE_AS
+    BUTTON      ID_FILE3_SAVE_AS
+    BUTTON      IDM_RETURN_POS
+    BUTTON      IDM_STOP_TRAN
+    BUTTON      IDM_XPOS_TRAN
+    BUTTON      IDM_YPOS_TRAN
+    SEPARATOR
+    BUTTON      IDM_FILE1_TRAN
+    SEPARATOR
+    BUTTON      IDM_FILE2_TRAN
+    BUTTON      IDM_FILE3_TRAN
+    BUTTON      IDM_FILE1_PLAY
+    BUTTON      IDM_FILE2_PLAY
+    BUTTON      IDM_FILE3_PLAY
+    BUTTON      IDM_STOP_PLAY
+    BUTTON      IDM_CANCEL_ZONE
+    BUTTON      ID_APP_ABOUT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MAINFRAME MENU
+BEGIN
+    POPUP "文件(&F)"
+    BEGIN
+        MENUITEM "新建(&N)\tCtrl+N",              ID_FILE_NEW
+        MENUITEM "打开(&O)...\tCtrl+O",           ID_FILE_OPEN
+        MENUITEM "打开文件1",                       ID_FILE1_OPEN
+        MENUITEM "打开文件2",                       ID_FILE2_OPEN
+        MENUITEM "打开文件3",                       ID_FILE3_OPEN
+        MENUITEM "合并文件1和2",                     ID_Link
+        MENUITEM SEPARATOR
+        MENUITEM "保存(&S)\tCtrl+S",              ID_FILE_SAVE
+        MENUITEM "另存为(&A)...",                  ID_FILE_SAVE_AS
+        MENUITEM "文件1另存为",                      ID_FILE1_SAVE_AS
+        MENUITEM "文件2另存为",                      ID_FILE2_SAVE_AS
+        MENUITEM "文件3另存为",                      ID_FILE3_SAVE_AS
+        MENUITEM SEPARATOR
+        MENUITEM "打印(&P)...\tCtrl+P",           ID_FILE_PRINT
+        MENUITEM "打印预览(&V)",                    ID_FILE_PRINT_PREVIEW
+        MENUITEM "打印设置(&R)...",                 ID_FILE_PRINT_SETUP
+        MENUITEM SEPARATOR
+        MENUITEM "最近的文件",                       ID_FILE_MRU_FILE1
+        MENUITEM SEPARATOR
+        MENUITEM "退出(&X)",                      ID_APP_EXIT
+    END
+    POPUP "编辑(&E)"
+    BEGIN
+        MENUITEM "撤消(&U)\tCtrl+Z",              ID_EDIT_UNDO
+        MENUITEM SEPARATOR
+        MENUITEM "剪切(&T)\tCtrl+X",              ID_EDIT_CUT
+        MENUITEM "复制(&C)\tCtrl+C",              ID_EDIT_COPY
+        MENUITEM "粘贴(&P)\tCtrl+V",              ID_EDIT_PASTE
+    END
+    POPUP "曲线平移"
+    BEGIN
+        MENUITEM "平移语音曲线_1",                    IDM_FILE1_TRAN
+        MENUITEM "平移频谱曲线_1",                    IDM_FFT1_TRAN
+        MENUITEM "平移倒谱(Hz)曲线_1",                IDM_CEP1_TRAN
+        MENUITEM "平移频谱(Hz)的频谱曲线_1",             ID_SpecFft1Tran
+        MENUITEM "平移Mel刻度频谱曲线_1",               ID_MelSpec1Tran
+        MENUITEM "平移Mel频率倒谱系数_1",               IDM_MFCC1_TRAN
+        MENUITEM "平移对数振幅谱(Hz)曲线_1",             ID_LogSpec1Tran
+        MENUITEM "平移倒谱法端点检测结果_1",               ID_CepDetect1Tran
+        MENUITEM SEPARATOR
+        MENUITEM "X方向平移",                       IDM_XPOS_TRAN
+        MENUITEM "Y方向平移",                       IDM_YPOS_TRAN
+        MENUITEM "停止平移",                        IDM_STOP_TRAN
+        MENUITEM "还原曲线",                        IDM_RETURN_POS
+        MENUITEM SEPARATOR
+        MENUITEM "平移语音曲线_2",                    IDM_FILE2_TRAN
+        MENUITEM "平移频谱曲线_2",                    IDM_FFT2_TRAN
+        MENUITEM "平移倒谱(Hz)曲线_2",                IDM_CEP2_TRAN
+        MENUITEM "平移频谱(Hz)的频谱曲线_2",             ID_SpecFft2Tran
+        MENUITEM "平移Mel刻度频谱曲线_2",               ID_MelSpec2Tran
+        MENUITEM "平移Mel频率倒谱系数_2",               IDM_MFCC2_TRAN
+        MENUITEM "平移对数振幅谱(Hz)曲线_2",             ID_LogSpec2Tran
+        MENUITEM "平移倒谱法端点检测结果_2",               ID_CepDetect2Tran
+        MENUITEM SEPARATOR
+        MENUITEM "平移语音曲线3",                     IDM_FILE3_TRAN
+    END
+    POPUP "音频播放"
+    BEGIN
+        MENUITEM "播放文件1",                       IDM_FILE1_PLAY
+        MENUITEM "播放文件2",                       IDM_FILE2_PLAY
+        MENUITEM "播放文件3",                       IDM_FILE3_PLAY
+        MENUITEM "停止播放",                        IDM_STOP_PLAY
+        MENUITEM SEPARATOR
+        MENUITEM "取消区域选择",                      IDM_CANCEL_ZONE
+    END
+    POPUP "时域分析"
+    BEGIN
+        MENUITEM "短时能量",                        ID_POWER
+        MENUITEM "短时过零率",                       ID_ZERO
+        MENUITEM "平均振幅",                        ID_VIBRATION
+        MENUITEM "修正的相关函数",                     ID_RCOR
+        MENUITEM "基于短时自相关法的基音周期估值",             ID_ACF_Pitch
+        MENUITEM "基于AMDF的基音周期估值",               ID_AMDF_Pitch
+        MENUITEM "基于倒谱的基音周期估值",                 ID_CEP_Pitch
+    END
+    POPUP "频域分析"
+    BEGIN
+        MENUITEM "计算倒谱(Hz)_1",                  ID_CEPSTRUM
+        MENUITEM "计算频谱(Hz)及频谱的频谱_1",            ID_TwiceFFT
+        MENUITEM "计算对数振幅谱(Hz)_1",               ID_LOGSPECTRUM
+        MENUITEM "计算Mel频谱及Mel频率倒谱系数_1",         ID_MelSpectrum
+        MENUITEM "倒谱法端点检测",                     ID_CepDetect
+        MENUITEM "保存有效帧mfcc",                   ID_SAVE_EFFECTIVE_MFCC
+        MENUITEM SEPARATOR
+        MENUITEM "计算倒谱(Hz)_2",                  ID_CEPSTRUM2
+        MENUITEM "计算频谱(Hz)及频谱的频谱_2",            ID_TwiceFFT2
+        MENUITEM "计算对数振幅谱(Hz)_2",               ID_LOGSPECTRUM2
+        MENUITEM "计算Mel频谱及Mel频率倒谱系数_2",         ID_MelSpectrum2
+        MENUITEM "倒谱法端点检测2",                    ID_CepDetect2
+        MENUITEM SEPARATOR
+        MENUITEM "功率谱",                         ID_SPECTRUM
+        MENUITEM "傅里叶变换",                       ID_FFT
+        MENUITEM "MFCC",                        ID_MFCC
+    END
+    POPUP "显示"
+    BEGIN
+        MENUITEM "显示语音曲线_1",                    ID_ShowWave
+        MENUITEM "显示频谱曲线_1",                    ID_FFTDisplay
+        MENUITEM "显示Mel刻度频谱曲线_1",               ID_MelSpectrumDisplay
+        MENUITEM "显示Mel频率倒谱系数_1",               ID_MelcepDisplay
+        MENUITEM "显示倒谱(Hz)曲线_1",                ID_CepDisplay
+        MENUITEM "显示频谱(Hz)的频谱曲线_1",             ID_TwiceFFTDisplay
+        MENUITEM "显示对数振幅谱(Hz)曲线_1",             ID_LogSpecHorizonDisplay
+        MENUITEM "显示倒谱法端点检测结果_1",               ID_CepDetectDisplay1
+        MENUITEM SEPARATOR
+        MENUITEM "显示语音曲线_2",                    ID_ShowWave2
+        MENUITEM "显示频谱曲线_2",                    ID_FFTDisplay2
+        MENUITEM "显示Mel刻度频谱曲线_2",               ID_MelSpectrumDisplay2
+        MENUITEM "显示Mel频率倒谱系数_2",               ID_MelcepDisplay2
+        MENUITEM "显示倒谱(Hz)曲线_2",                ID_CepDisplay2
+        MENUITEM "显示频谱(Hz)的频谱曲线_2",             ID_TwiceFFTDisplay2
+        MENUITEM "显示对数振幅谱(Hz)曲线_2",             ID_LogSpecHorizonDisplay2
+        MENUITEM "显示倒谱法端点检测结果_2",               ID_CepDetectDisplay2
+        MENUITEM SEPARATOR
+        MENUITEM "显示综合的语谱图",                    ID_MutiDisplay
+        MENUITEM "显示功率谱语谱图",                    ID_SpectrumDisplay
+        MENUITEM "显示对数功率谱语谱图",                  ID_DRAWYPT
+        MENUITEM "基音周期分布",                      ID_SHOWPITCH
+    END
+    POPUP "帧长设置"
+    BEGIN
+        MENUITEM "256",                         ID_Frmlen256
+        MENUITEM "512",                         ID_Frmlen512
+        MENUITEM "1024",                        ID_Frmlen1024
+    END
+    POPUP "帮助(&H)"
+    BEGIN
+        MENUITEM "关于 MyWave(&A)...",            ID_APP_ABOUT
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDR_MAINFRAME ACCELERATORS
+BEGIN
+    "N",            ID_FILE_NEW,            VIRTKEY, CONTROL
+    "O",            ID_FILE_OPEN,           VIRTKEY, CONTROL
+    "S",            ID_FILE_SAVE,           VIRTKEY, CONTROL
+    "P",            ID_FILE_PRINT,          VIRTKEY, CONTROL
+    "Z",            ID_EDIT_UNDO,           VIRTKEY, CONTROL
+    "X",            ID_EDIT_CUT,            VIRTKEY, CONTROL
+    "C",            ID_EDIT_COPY,           VIRTKEY, CONTROL
+    "V",            ID_EDIT_PASTE,          VIRTKEY, CONTROL
+    VK_BACK,        ID_EDIT_UNDO,           VIRTKEY, ALT
+    VK_DELETE,      ID_EDIT_CUT,            VIRTKEY, SHIFT
+    VK_INSERT,      ID_EDIT_COPY,           VIRTKEY, CONTROL
+    VK_INSERT,      ID_EDIT_PASTE,          VIRTKEY, SHIFT
+    VK_F6,          ID_NEXT_PANE,           VIRTKEY 
+    VK_F6,          ID_PREV_PANE,           VIRTKEY, SHIFT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 235, 55
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "关于 MyWave"
+FONT 9, "宋体", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "MyWave 1.0 版",IDC_STATIC,40,10,119,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2012",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "确定",IDOK,178,7,50,16,WS_GROUP
+END
+
+IDD_DIALOG1 DIALOGEX 0, 0, 838, 99
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "X轴",IDC_STATIC,19,4,333,95
+    LTEXT           "显示位置",IDC_STATIC,31,35,32,12
+    LTEXT           "缩放比例",IDC_STATIC,31,57,32,12
+    EDITTEXT        IDC_EDIT_XPOS,81,35,42,12,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_XZOOM,82,57,40,12,ES_AUTOHSCROLL | ES_READONLY
+    SCROLLBAR       IDC_SCROLLBAR_XSHOWPOS,138,35,198,11
+    GROUPBOX        "文件信息",IDC_STATIC,361,4,112,95
+    LISTBOX         IDC_LIST_FILE_INFO,372,16,94,79,LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Y轴",IDC_STATIC,478,4,116,95
+    CONTROL         "",IDC_SLIDER_XZOOM,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,138,60,201,11
+    SCROLLBAR       IDC_SCROLLBAR_YSHOWPOS,485,16,17,80,SBS_VERT
+    LTEXT           "显示位置<",IDC_STATIC,513,20,45,13
+    LTEXT           "缩放比例>",IDC_STATIC,513,54,45,13
+    EDITTEXT        IDC_EDIT_YPOS,513,37,45,13,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_YZOOM,513,71,45,13,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "",IDC_SLIDER_YZOOM,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | WS_TABSTOP,562,17,24,71
+    CONTROL         "",IDC_SLIDER_SPECTRUM,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | WS_TABSTOP,608,23,26,51
+    GROUPBOX        "缩放曲线",IDC_STATIC,597,5,236,93
+    LTEXT           "频谱1",IDC_STATIC_SPEC,611,15,21,8
+    CONTROL         "",IDC_SLIDER_FFTSPECTRUM,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | WS_TABSTOP,679,23,25,51
+    LTEXT           "频谱的频谱1",IDC_STATIC_SPECFFT,670,15,45,8
+    LTEXT           "Mel频谱1",IDC_STATIC_MELSPEC,766,15,32,8
+    CONTROL         "",IDC_SLIDER_MELSPECTRUM,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | WS_TABSTOP,766,23,23,51
+    CONTROL         "",IDC_SLIDER_SPECTRUM2,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | WS_TABSTOP,639,23,26,51
+    LTEXT           "频谱2",IDC_STATIC_SPEC2,643,15,21,8
+    CONTROL         "",IDC_SLIDER_FFTSPECTRUM2,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | WS_TABSTOP,723,23,25,51
+    LTEXT           "频谱的频谱2",IDC_STATIC_SPECFFT2,719,15,45,8
+    LTEXT           "Mel频谱2",IDC_STATIC_MELSPEC2,800,15,32,8
+    CONTROL         "",IDC_SLIDER_MELSPECTRUM2,"msctls_trackbar32",TBS_AUTOTICKS | TBS_VERT | TBS_BOTH | WS_TABSTOP,800,23,23,51
+    EDITTEXT        IDC_EDIT1,609,82,26,14,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "缩放比例：",IDC_STATIC,600,72,41,8
+    EDITTEXT        IDC_EDIT2,641,82,26,14,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT3,679,82,26,14,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT4,724,82,26,14,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT5,766,82,26,14,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT6,801,82,26,14,ES_AUTOHSCROLL | ES_READONLY
+END
+
+IDD_fft DIALOGEX 0, 0, 625, 373
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+CAPTION "Dialog"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "",IDC_STATIC,14,14,427,340,WS_BORDER
+    PUSHBUTTON      "打开文件1",IDC_BUTTON1,482,47,98,14
+    PUSHBUTTON      "打开文件2",IDC_BUTTON2,483,67,97,12
+END
+
+IDD_ADD_GMM DIALOGEX 0, 0, 486, 330
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Dialog"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "说话人信息",IDC_STATIC,17,11,150,302
+    LISTBOX         IDC_LIST1,25,28,133,157,LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "说话人辨认",IDC_STATIC,170,11,300,85
+    CONTROL         "",IDC_SLIDER1,"msctls_trackbar32",TBS_AUTOTICKS | TBS_BOTH | WS_GROUP | WS_TABSTOP,197,53,82,12
+    LISTBOX         IDC_LIST3,305,23,152,70,LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "最低",IDC_STATIC,178,53,19,13
+    LTEXT           "最高",IDC_STATIC,282,53,17,11
+    PUSHBUTTON      "进行说话人辨认",IDC_SPEAKER_IDENTIFY,181,71,102,12
+    EDITTEXT        IDC_EDIT1,181,29,114,16,ES_AUTOHSCROLL
+    GROUPBOX        "说话人确认",IDC_STATIC,170,110,300,65
+    CONTROL         "",IDC_SLIDER2,"msctls_trackbar32",TBS_AUTOTICKS | TBS_BOTH | WS_GROUP | WS_TABSTOP,197,131,82,12
+    LTEXT           "最低",IDC_STATIC,175,135,19,13
+    LTEXT           "最高",IDC_STATIC,281,135,17,11
+    GROUPBOX        "确认结果",IDC_STATIC,313,133,142,34
+    CONTROL         "被接受",IDC_RADIO1,"Button",BS_AUTORADIOBUTTON,323,149,50,9
+    CONTROL         "被拒绝",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON,380,148,50,9
+    PUSHBUTTON      "进行说话人确认",IDC_SPEAKER_VERIFY,189,148,102,13
+    EDITTEXT        IDC_NAMEEDIT,90,211,68,15,ES_AUTOHSCROLL
+    PUSHBUTTON      "添加说话人",IDC_ADDSP,25,228,63,12
+    PUSHBUTTON      "删除说话人",IDC_DELSP,95,228,63,12
+    GROUPBOX        "声音采样选项",IDC_STATIC,170,260,300,36
+    LTEXT           "训练时长",IDC_STATIC,180,279,36,10
+    EDITTEXT        IDC_TRAINEDIT,219,279,33,12,ES_AUTOHSCROLL
+    CONTROL         "",IDC_SPIN1,"msctls_updown32",UDS_ARROWKEYS,255,279,11,10
+    LTEXT           "测试时长",IDC_STATIC,281,279,36,10
+    EDITTEXT        IDC_TESTEDIT,321,279,33,12,ES_AUTOHSCROLL
+    CONTROL         "",IDC_SPIN2,"msctls_updown32",UDS_ARROWKEYS,357,279,11,11
+    LTEXT           "（秒）",IDC_STATIC,368,279,26,10
+    PUSHBUTTON      "缺省设置",IDC_SETTIME,397,279,58,12
+    CONTROL         "",IDC_PROGRESS1,"msctls_progress32",WS_BORDER,179,299,271,11
+    LTEXT           "库中现有说话人的数目",IDC_STATIC,25,191,84,15,WS_BORDER
+    LTEXT           "姓名",IDC_STATIC,25,211,49,15,WS_BORDER
+    LTEXT           "用户身份申请",IDC_STATIC,313,119,60,12,WS_BORDER
+    LTEXT           "",IDC_STATIC_NUMBER,125,191,33,15,WS_BORDER
+    LTEXT           "",IDC_STATIC_USER,377,119,78,12,WS_BORDER
+    LTEXT           "",IDC_WAVESHOW,170,182,300,71,WS_BORDER
+    PUSHBUTTON      "训练模型",IDC_XL_GMM,175,168,82,11
+    GROUPBOX        "建模参数",IDC_STATIC,25,251,131,54
+    LTEXT           "GMM阶数",IDC_STATIC,34,268,34,11
+    COMBOBOX        IDC_COMBO1,67,267,35,13,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "提取特征",IDC_FEACHER,295,166,51,11
+    PUSHBUTTON      "wav文件连接",IDC_LINK_WAV,380,166,69,14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080403a8"
+        BEGIN
+            VALUE "CompanyName", "TODO: <公司名>"
+            VALUE "FileDescription", "TODO: <文件说明>"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "MyWave.exe"
+            VALUE "LegalCopyright", "TODO: (C) <公司名>。保留所有权利。"
+            VALUE "OriginalFilename", "MyWave.exe"
+            VALUE "ProductName", "TODO: <产品名>"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 936
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 48
+    END
+
+    IDD_DIALOG1, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        TOPMARGIN, 7
+    END
+
+    IDD_fft, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 618
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 366
+    END
+
+    IDD_ADD_GMM, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 479
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 323
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog Info
+//
+
+IDD_ADD_GMM DLGINIT
+BEGIN
+    IDC_COMBO1, 0x403, 2, 0
+0x0032, 
+    IDC_COMBO1, 0x403, 2, 0
+0x0034, 
+    IDC_COMBO1, 0x403, 2, 0
+0x0038, 
+    IDC_COMBO1, 0x403, 3, 0
+0x3631, "\000" 
+    IDC_COMBO1, 0x403, 3, 0
+0x3233, "\000" 
+    IDC_COMBO1, 0x403, 3, 0
+0x3436, "\000" 
+    0
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE
+BEGIN
+    IDP_OLE_INIT_FAILED     "OLE 初始化失败。请确保 OLE 库是正确的版本。"
+END
+
+STRINGTABLE
+BEGIN
+    IDR_MAINFRAME           "MyWave\n\nMyWave\n\n\nMyWave.Document\nMyWave.Document"
+END
+
+STRINGTABLE
+BEGIN
+    AFX_IDS_APP_TITLE       "MyWave"
+    AFX_IDS_IDLEMESSAGE     "就绪"
+END
+
+STRINGTABLE
+BEGIN
+    ID_INDICATOR_EXT        "EXT"
+    ID_INDICATOR_CAPS       "CAP"
+    ID_INDICATOR_NUM        "NUM"
+    ID_INDICATOR_SCRL       "SCRL"
+    ID_INDICATOR_OVR        "OVR"
+    ID_INDICATOR_REC        "REC"
+END
+
+STRINGTABLE
+BEGIN
+    ID_FILE_NEW             "创建新文档\n新建"
+    ID_FILE_OPEN            "\n打开第一个Wave文件"
+    ID_FILE_CLOSE           "关闭活动文档\n关闭"
+    ID_FILE_SAVE            "保存活动文档\n保存"
+    ID_FILE_SAVE_AS         "用新名称保存活动文档\n另存为"
+    ID_FILE_PAGE_SETUP      "更改打印选项\n页面设置"
+    ID_FILE_PRINT_SETUP     "更改打印机选项和打印选项\n打印设置"
+    ID_FILE_PRINT           "打印活动文档\n打印"
+    ID_FILE_PRINT_PREVIEW   "显示整页\n打印预览"
+END
+
+STRINGTABLE
+BEGIN
+    ID_APP_ABOUT            "显示程序信息、版本号和版权\n关于"
+    ID_APP_EXIT             "退出应用程序；提示保存文档\n退出"
+END
+
+STRINGTABLE
+BEGIN
+    ID_FILE_MRU_FILE1       "打开此文档"
+    ID_FILE_MRU_FILE2       "打开此文档"
+    ID_FILE_MRU_FILE3       "打开此文档"
+    ID_FILE_MRU_FILE4       "打开此文档"
+    ID_FILE_MRU_FILE5       "打开此文档"
+    ID_FILE_MRU_FILE6       "打开此文档"
+    ID_FILE_MRU_FILE7       "打开此文档"
+    ID_FILE_MRU_FILE8       "打开此文档"
+    ID_FILE_MRU_FILE9       "打开此文档"
+    ID_FILE_MRU_FILE10      "打开此文档"
+    ID_FILE_MRU_FILE11      "打开此文档"
+    ID_FILE_MRU_FILE12      "打开此文档"
+    ID_FILE_MRU_FILE13      "打开此文档"
+    ID_FILE_MRU_FILE14      "打开此文档"
+    ID_FILE_MRU_FILE15      "打开此文档"
+    ID_FILE_MRU_FILE16      "打开此文档"
+END
+
+STRINGTABLE
+BEGIN
+    ID_NEXT_PANE            "切换到下一个窗格\n下一窗格"
+    ID_PREV_PANE            "切换回上一个窗格\n上一窗格"
+END
+
+STRINGTABLE
+BEGIN
+    ID_WINDOW_SPLIT         "将活动窗口拆分为多个窗格\n拆分"
+END
+
+STRINGTABLE
+BEGIN
+    ID_EDIT_CLEAR           "清除选定内容\n清除"
+    ID_EDIT_CLEAR_ALL       "清除全部内容\n全部清除"
+    ID_EDIT_COPY            "复制选定内容并将其放到剪贴板上\n复制"
+    ID_EDIT_CUT             "剪切选定内容并将其放到剪贴板上\n剪切"
+    ID_EDIT_FIND            "查找指定的文本\n查找"
+    ID_EDIT_PASTE           "插入剪贴板内容\n粘贴"
+    ID_EDIT_REPEAT          "重复上一操作\n重复"
+    ID_EDIT_REPLACE         "用其他文本替换特定的文本\n替换"
+    ID_EDIT_SELECT_ALL      "选定整个文档\n全选"
+    ID_EDIT_UNDO            "撤消上一操作\n撤消"
+    ID_EDIT_REDO            "恢复上次撤消的操作\n重做"
+END
+
+STRINGTABLE
+BEGIN
+    ID_VIEW_TOOLBAR         "显示或隐藏工具栏\n切换工具栏"
+    ID_VIEW_STATUS_BAR      "显示或隐藏状态栏\n切换状态栏"
+END
+
+STRINGTABLE
+BEGIN
+    AFX_IDS_SCSIZE          "更改窗口大小"
+    AFX_IDS_SCMOVE          "更改窗口位置"
+    AFX_IDS_SCMINIMIZE      "将窗口缩小为图标"
+    AFX_IDS_SCMAXIMIZE      "使窗口最大化显示"
+    AFX_IDS_SCNEXTWINDOW    "切换到下一个文档窗口"
+    AFX_IDS_SCPREVWINDOW    "切换到前一个文档窗口"
+    AFX_IDS_SCCLOSE         "关闭活动窗口并提示保存文档"
+END
+
+STRINGTABLE
+BEGIN
+    AFX_IDS_SCRESTORE       "将窗口恢复到正常大小"
+    AFX_IDS_SCTASKLIST      "激活任务列表"
+END
+
+STRINGTABLE
+BEGIN
+    AFX_IDS_PREVIEW_CLOSE   "关闭打印预览模式\n取消预览"
+END
+
+STRINGTABLE
+BEGIN
+    ID_FILE1_OPEN           "\n打开第一个Wave文件"
+    ID_FILE2_OPEN           "\n打开第二个Wave文件"
+    ID_FILE3_OPEN           "\n打开第三个Wave文件"
+    ID_FILE1_SAVE_AS        "\n文件1另存为"
+    IDM_SHOWFILE1           "\n显示文件1数据"
+    IDM_SHOWFILE2           "\n显示文件2数据"
+END
+
+STRINGTABLE
+BEGIN
+    IDM_SHOWFILE3           "\n显示文件3数据"
+    ID_FILE2_SAVE_AS        "\n文件2另存为"
+    ID_FILE3_SAVE_AS        "\n文件3另存为"
+    IDM_FILE1_TRAN          "\n平移文件1曲线"
+    IDM_FILE2_TRAN          "\n平移文件2曲线"
+    IDM_FILE3_TRAN          "\n平移文件3曲线"
+    IDM_RETURN_POS          "\n还原曲线"
+    IDM_XPOS_TRAN           "\nX方向平移"
+    IDM_YPOS_TRAN           "\nY方向平移"
+END
+
+STRINGTABLE
+BEGIN
+    IDM_FILE1_PLAY          "\n播放文件1"
+    IDM_FILE2_PLAY          "\n播放文件2"
+    IDM_FILE3_PLAY          "\n播放文件3"
+    IDM_STOP_PLAY           "\n停止播放"
+    IDM_CANCEL_ZONE         "\n取消区域选择"
+    IDM_STOP_TRAN           "\n停止平移"
+END
+
+STRINGTABLE
+BEGIN
+    ID_FFT                  "\n傅里叶变换求频谱"
+    IDM_ADDWINDOW           "/n预处理加窗"
+    ID_SPECTRUM             "/n功率谱"
+    ID_LOGSPECTRUM          "/n对数功率谱"
+    ID_CEPSTRUM             "/n倒谱"
+    ID_POWER                "短时能量"
+    ID_ZERO                 "短时过零率"
+    ID_VIBRATION            "平均振幅"
+END
+
+STRINGTABLE
+BEGIN
+    IDM_CEP1_TRAN           "\n移动倒谱1"
+    IDM_SHOWCEP1            "\n显示倒谱1"
+END
+
+STRINGTABLE
+BEGIN
+    ID_LOGSPECTRUM2         "/n对数功率谱_2"
+END
+
+#endif    // 中文(简体，中国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE 4, 2
+#pragma code_page(936)
+#include "res\MyWave.rc2"  // 非 Microsoft Visual C++ 编辑的资源
+#include "afxres.rc"         // 标准组件
+#include "afxprint.rc"       // 打印/打印预览资源
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

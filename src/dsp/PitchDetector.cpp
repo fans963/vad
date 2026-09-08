@@ -35,7 +35,9 @@ PitchResult detectPitchACF(const QVector<float>& samples, int frameSize,
         }
 
         // Center clipping for better pitch detection
-        float clip = 0.70f * acf[0];
+        float peakAmplitude = 0.0f;
+        for (float sample : frame) peakAmplitude = std::max(peakAmplitude, std::fabs(sample));
+        float clip = 0.70f * peakAmplitude;
         QVector<float> clipped(N, 0.0f);
         for (int n = 0; n < N; ++n)
             clipped[n] = (std::fabs(frame[n]) > clip) ? frame[n] : 0.0f;
@@ -66,7 +68,10 @@ PitchResult detectPitchACF(const QVector<float>& samples, int frameSize,
 
         // Energy check for voiced
         float energy = 0.0f;
-        for (int n = 0; n < N; ++n) energy += frame[n] * frame[n];
+        for (int n = 0; n < N; ++n) {
+            const float sample = frame[n] * 32768.0f;
+            energy += sample * sample;
+        }
         energy = 10.0f * std::log10(energy / N + 1e-12f);
 
         if (energy > 30.0f && acf2[1] / std::max(acf2[0], 1e-10f) > 0.5f && bestIdx > 0) {
@@ -144,9 +149,8 @@ PitchResult detectPitchCepstral(const QVector<float>& samples, int frameSize,
     r.confidence.resize(nFrames);
 
     for (int f = 0; f < nFrames; ++f) {
-        QVector<float> logMag = FftProcessor::computeLogAmplitudeSpectrum(frames[f]);
-        FftProcessor fftCep(logMag.size());
-        auto cep = fftCep.computeMagnitudeSpectrum(logMag);
+        FftProcessor fftCep(frameSize);
+        auto cep = fftCep.computeRealCepstrum(frames[f]);
 
         int maxLag = cep.size() - 1;
         int minIdx = sampleRate / 500;
