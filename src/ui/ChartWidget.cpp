@@ -1,6 +1,17 @@
 #include "ChartWidget.h"
+#include <QEvent>
 #include <QMouseEvent>
 #include <QMenu>
+#include <QPalette>
+
+namespace {
+
+class FrameAxisTicker final : public QCPAxisTickerFixed {
+protected:
+    int getSubTickCount(double /*tickStep*/) override { return 1; }
+};
+
+} // namespace
 
 ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
@@ -45,6 +56,7 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
     };
     setupMarker(m_selectionStartLine);
     setupMarker(m_selectionEndLine);
+    applyPlotPalette();
 
     // Resize tracking for adaptive downsampling
     connect(m_plot, &QCustomPlot::afterReplot, this, [this]() {
@@ -92,6 +104,82 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
     layout->addWidget(m_plot);
 }
 
+void ChartWidget::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange ||
+        event->type() == QEvent::ApplicationPaletteChange) {
+        applyPlotPalette();
+        m_plot->replot(QCustomPlot::rpQueuedReplot);
+    }
+}
+
+void ChartWidget::applyPlotPalette() {
+    if (!m_plot) return;
+
+    const QPalette& pal = palette();
+    const QColor background = pal.color(QPalette::Base);
+    const QColor text = pal.color(QPalette::Text);
+    const QColor border = pal.color(QPalette::Mid);
+    const bool dark = background.lightness() < 128;
+
+    m_plot->setPalette(pal);
+    m_plot->setBackground(QBrush(background));
+    m_plot->axisRect()->setBackground(QBrush(background));
+
+    QColor axisColor = text;
+    axisColor.setAlpha(dark ? 210 : 190);
+    QColor subTickColor = text;
+    subTickColor.setAlpha(dark ? 130 : 110);
+    for (auto* axis : {m_plot->xAxis, m_plot->xAxis2,
+                       m_plot->yAxis, m_plot->yAxis2}) {
+        axis->setBasePen(QPen(axisColor, 1.0));
+        axis->setTickPen(QPen(axisColor, 1.0));
+        axis->setSubTickPen(QPen(subTickColor, 1.0));
+        axis->setTickLabelColor(text);
+        axis->setLabelColor(text);
+    }
+
+    QColor legendBackground = background;
+    legendBackground.setAlpha(dark ? 225 : 235);
+    m_plot->legend->setBrush(QBrush(legendBackground));
+    m_plot->legend->setBorderPen(QPen(border));
+    m_plot->legend->setTextColor(text);
+    m_plot->legend->setSelectedTextColor(text);
+
+    if (m_coordLabel) {
+        QColor labelBackground = background;
+        labelBackground.setAlpha(dark ? 225 : 220);
+        m_coordLabel->setColor(text);
+        m_coordLabel->setPen(QPen(border));
+        m_coordLabel->setBrush(QBrush(labelBackground));
+    }
+
+    if (m_playhead)
+        m_playhead->setPen(QPen(dark ? QColor(255, 92, 92)
+                                     : QColor(220, 30, 30), 1.5));
+    const QColor selectionColor = dark ? QColor(255, 183, 77)
+                                       : QColor(230, 125, 0);
+    for (auto* line : {m_selectionStartLine, m_selectionEndLine}) {
+        if (line) line->setPen(QPen(selectionColor, 1.5, Qt::DashLine));
+    }
+
+    updateFrameGridStyle();
+}
+
+void ChartWidget::updateFrameGridStyle() {
+    if (!m_plot) return;
+    const bool dark = palette().color(QPalette::Base).lightness() < 128;
+    auto* grid = m_plot->xAxis->grid();
+
+    // Keep full-frame and half-frame boundaries distinct on both themes.
+    const QColor fullFrame = dark ? QColor(105, 170, 255, 155)
+                                  : QColor(48, 105, 180, 130);
+    const QColor halfFrame = dark ? QColor(255, 190, 90, 145)
+                                  : QColor(230, 145, 35, 115);
+    grid->setPen(QPen(fullFrame, 1.0, Qt::SolidLine));
+    grid->setSubGridPen(QPen(halfFrame, 0.8, Qt::DashLine));
+}
+
 void ChartWidget::handleChartEvent(const ChartEvent& event) {
     switch (event.type) {
     case ChartEvent::AddChart: {
@@ -101,7 +189,11 @@ void ChartWidget::handleChartEvent(const ChartEvent& event) {
             QColor c = (event.dataType == DataType::Vad)
                 ? QColor(76, 175, 80) // green for VAD
                 : kPalette[m_nextColorIndex++ % kPaletteSize];
-            m_meta[k] = { c, true };
+            m_meta[k] = { c, event.chart.visible };
+        } else {
+            // The engine owns visibility state. Keep the user's color, but
+            // always accept a later hidden -> visible transition.
+            m_meta[k].visible = event.chart.visible;
         }
         rebuildSeries();
         // Auto-rescale on first chart
@@ -121,6 +213,8 @@ void ChartWidget::handleChartEvent(const ChartEvent& event) {
                     ? QColor(76, 175, 80)
                     : kPalette[m_nextColorIndex++ % kPaletteSize];
                 m_meta[k] = { c, chart.visible };
+            } else {
+                m_meta[k].visible = chart.visible;
             }
         }
         rebuildSeries();
@@ -208,8 +302,10 @@ void ChartWidget::rebuildSeries() {
         }
 
         bool selected = (key == m_selectedKey);
-        double lineWidth = selected ? 1.5 : 0.4;
-        double opacity = selected ? 1.0 : 0.7;
+        // Keep every series fully saturated. Selection is indicated by line
+        // width only, so unselected curves don't look disabled or washed out.
+        double lineWidth = selected ? 2.0 : 1.0;
+        double opacity = 1.0;
 
         auto* graph = m_plot->addGraph();
         graph->setAdaptiveSampling(true); // 自动降采样：跳过屏幕重叠点
@@ -231,13 +327,14 @@ void ChartWidget::rebuildSeries() {
         switch (dt) {
         case DataType::Energy:
         case DataType::ZeroCrossingRate: {
-            // StepLineSeries in Flutter — use QCPStepLine in QCustomPlot
-            graph->setLineStyle(QCPGraph::lsStepLeft);
+            // Connect the value at each frame center to make trends easy to see.
+            graph->setLineStyle(QCPGraph::lsLine);
             QColor c = meta.color;
             c.setAlphaF(opacity);
             QPen pen(c);
             pen.setWidthF(lineWidth);
             graph->setPen(pen);
+            graph->setScatterStyle(QCPScatterStyle::ssNone);
             graph->setData(xs, ys);
             break;
         }
@@ -334,24 +431,28 @@ int ChartWidget::plotWidth() const { return m_plot->viewport().width(); }
 
 void ChartWidget::setFrameGrid(int frameSize) {
     m_frameGridSize = frameSize;
-    m_plot->xAxis->grid()->setVisible(true);
-    m_plot->xAxis->grid()->setPen(QPen(QColor(128, 128, 128, 60), 0.5));
-    m_plot->xAxis->setSubTicks(false);
+    auto* grid = m_plot->xAxis->grid();
+    const bool enabled = frameSize > 0;
+    grid->setVisible(enabled);
+    grid->setSubGridVisible(enabled);
+
+    updateFrameGridStyle();
+    m_plot->xAxis->setSubTicks(enabled);
     applyFrameGrid();
 }
 
 void ChartWidget::applyFrameGrid() {
-    if (m_frameGridSize <= 0) return;
-    double w = m_plot->xAxis->range().size();
-    if (w <= 0) return;
-    // step ≥ frameSize, adaptive to keep ≤15 lines
-    int n = std::max(1, (int)std::ceil(w / (15.0 * m_frameGridSize)));
-    double step = n * m_frameGridSize;
-    auto* t = new QCPAxisTickerFixed;
-    t->setTickStep(step);
+    if (m_frameGridSize <= 0) {
+        m_plot->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+
+    auto* t = new FrameAxisTicker;
+    t->setTickStep(m_frameGridSize);
+    t->setTickOrigin(0.0);
     t->setScaleStrategy(QCPAxisTickerFixed::ssNone);
     m_plot->xAxis->setTicker(QSharedPointer<QCPAxisTicker>(t));
-    m_plot->replot();
+    m_plot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 QStringList ChartWidget::allSeriesKeys() const {

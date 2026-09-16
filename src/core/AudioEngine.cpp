@@ -104,15 +104,12 @@ void AudioEngine::addFile(const QString& filePath, const QByteArray& fileData,
     m_indexRangeEnd = m_maxIndex;
     emitRangeSignals();
 
-    // Send AddChart for the Audio waveform
-    auto ranged = audioChart.getRange(0.0f, m_maxIndex);
-    auto ds = minMaxDownsample(ranged, m_downSamplePointsNum);
-
+    // Keep the full waveform in cache and reduce it only for UI delivery.
     ChartEvent ev;
     ev.type = ChartEvent::AddChart;
     ev.key = filePath;
     ev.dataType = DataType::Audio;
-    ev.chart = ds;
+    ev.chart = prepareChartForUi(audioChart);
     emit chartEvent(ev);
 }
 
@@ -133,14 +130,11 @@ void AudioEngine::addChart(const QString& filePath, DataType dataType) {
     auto chart = m_cache.get(filePath, dataType);
     if (!chart) return;
 
-    auto ranged = isFullRange() ? *chart : chart->getRange(m_indexRangeStart, m_indexRangeEnd);
-    auto ds = minMaxDownsample(ranged, m_downSamplePointsNum);
-
     ChartEvent ev;
     ev.type = ChartEvent::AddChart;
     ev.key = filePath;
     ev.dataType = dataType;
-    ev.chart = ds;
+    ev.chart = prepareChartForUi(*chart);
     emit chartEvent(ev);
 }
 
@@ -349,34 +343,26 @@ void AudioEngine::syncToUi() {
     recomputeRanges();
     emitRangeSignals();
 
-    if (isFullRange()) {
-        // Send all visible charts
-        auto visible = m_cache.getVisible();
-        QVector<QPair<QString, CachedChart>> dsCharts;
-        for (const auto& [key, chart] : visible) {
-            auto ds = minMaxDownsample(chart, m_downSamplePointsNum);
-            dsCharts.append({key, ds});
-        }
-
-        ChartEvent ev;
-        ev.type = ChartEvent::UpdateAllCharts;
-        ev.chartList = dsCharts;
-        emit chartEvent(ev);
-    } else {
-        // Send ranged charts
-        auto visible = m_cache.getVisible();
-        QVector<QPair<QString, CachedChart>> dsCharts;
-        for (const auto& [key, chart] : visible) {
-            auto ranged = chart.getRange(m_indexRangeStart, m_indexRangeEnd);
-            auto ds = minMaxDownsample(ranged, m_downSamplePointsNum);
-            dsCharts.append({key, ds});
-        }
-
-        ChartEvent ev;
-        ev.type = ChartEvent::UpdateAllCharts;
-        ev.chartList = dsCharts;
-        emit chartEvent(ev);
+    const auto visible = m_cache.getVisible();
+    QVector<QPair<QString, CachedChart>> chartsForUi;
+    chartsForUi.reserve(visible.size());
+    for (const auto& [key, chart] : visible) {
+        chartsForUi.append({key, prepareChartForUi(chart)});
     }
+
+    ChartEvent ev;
+    ev.type = ChartEvent::UpdateAllCharts;
+    ev.chartList = std::move(chartsForUi);
+    emit chartEvent(ev);
+}
+
+CachedChart AudioEngine::prepareChartForUi(const CachedChart& chart) const {
+    // The cache always owns the full-resolution result. Range clipping and
+    // min/max reduction happen exactly once, immediately before UI delivery.
+    const CachedChart ranged = isFullRange()
+        ? chart
+        : chart.getRange(m_indexRangeStart, m_indexRangeEnd);
+    return minMaxDownsample(ranged, m_downSamplePointsNum);
 }
 
 void AudioEngine::emitRangeSignals() {
@@ -414,13 +400,11 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
         break;
     }
     case DataType::Energy: {
-        chart = computeEnergy(audio->samples, m_config.frameSize,
-                               m_downSamplePointsNum);
+        chart = computeEnergy(audio->samples, m_config.frameSize);
         break;
     }
     case DataType::ZeroCrossingRate: {
-        chart = computeZCR(audio->samples, m_config.frameSize,
-                            m_downSamplePointsNum);
+        chart = computeZCR(audio->samples, m_config.frameSize);
         break;
     }
     case DataType::Vad: {

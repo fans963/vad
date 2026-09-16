@@ -41,10 +41,15 @@ signals:
     void plotWidthChanged(int pixels);
     void selectionRangeChanged(double firstSample, double lastSample);
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 public:
     void rebuildSeries();
 
 private:
+    void applyPlotPalette();
+    void updateFrameGridStyle();
     QColor seriesColor(const QString& filePath, DataType dt) const;
     bool isVisibleByKey(const QString& key) const;
 

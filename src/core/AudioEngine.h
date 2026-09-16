@@ -72,6 +72,7 @@ private:
     void syncToUi();
     void recomputeRanges();
     void recomputeChartIntoCache(const QString& filePath, DataType dt);
+    CachedChart prepareChartForUi(const CachedChart& chart) const;
     void emitRangeSignals();
     bool isFullRange() const;
 

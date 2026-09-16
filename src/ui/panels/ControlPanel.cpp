@@ -2,6 +2,8 @@
 #include "../ChartWidget.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QLabel>
 #include <QScrollArea>
@@ -28,7 +30,21 @@ void ControlPanel::setupUi() {
 
     auto* w = new QWidget;
     scrollArea->setWidget(w);
-    auto* layout = new QVBoxLayout(w);
+    auto* rootLayout = new QVBoxLayout(w);
+    rootLayout->setContentsMargins(6, 6, 6, 6);
+
+    auto* dashboard = new QWidget;
+    dashboard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto* layout = new QGridLayout(dashboard);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setHorizontalSpacing(8);
+    layout->setVerticalSpacing(6);
+    layout->setColumnStretch(0, 2); // Series management
+    layout->setColumnStretch(1, 4); // Axis controls
+    layout->setColumnStretch(2, 1); // Frame size
+    layout->setColumnStretch(3, 3); // VAD
+    rootLayout->addWidget(dashboard, 0);
+    rootLayout->addStretch(1);
 
     // ── Series selector ──────────────────────────────────────────────────
     auto* seriesGroup = new QGroupBox(QStringLiteral("曲线管理"));
@@ -38,7 +54,9 @@ void ControlPanel::setupUi() {
     selRow->addWidget(new QLabel(QStringLiteral("选择：")));
     m_seriesCombo = new QComboBox;
     m_seriesCombo->setMinimumWidth(150);
-    selRow->addWidget(m_seriesCombo, 1);
+    m_seriesCombo->setMaximumWidth(460);
+    selRow->addWidget(m_seriesCombo);
+    selRow->addStretch(1);
     sgLayout->addLayout(selRow);
 
     auto* btnRow = new QHBoxLayout;
@@ -49,79 +67,145 @@ void ControlPanel::setupUi() {
     m_visibleBtn->setMaximumWidth(80);
     btnRow->addWidget(m_visibleBtn);
     m_playBtn = new QPushButton(QStringLiteral("播放选区"));
+    m_playBtn->setMaximumWidth(100);
     btnRow->addWidget(m_playBtn);
     m_stopBtn = new QPushButton(QStringLiteral("停止"));
+    m_stopBtn->setMaximumWidth(70);
     btnRow->addWidget(m_stopBtn);
     m_deleteBtn = new QPushButton(QStringLiteral("删除曲线"));
+    m_deleteBtn->setMaximumWidth(90);
     m_deleteBtn->setStyleSheet("color: red;");
     btnRow->addWidget(m_deleteBtn);
+    btnRow->addStretch(1);
     sgLayout->addLayout(btnRow);
-    layout->addWidget(seriesGroup);
+    layout->addWidget(seriesGroup, 0, 0);
 
     // ── Axis controls ─────────────────────────────────────────────────────
     auto* axisGroup = new QGroupBox(QStringLiteral("坐标轴控制"));
-    auto* agLayout = new QVBoxLayout(axisGroup);
+    auto* agLayout = new QHBoxLayout(axisGroup);
+    agLayout->setContentsMargins(10, 8, 10, 8);
+    agLayout->setSpacing(10);
 
     // X-axis
-    agLayout->addWidget(new QLabel(QStringLiteral("X 轴显示位置：")));
+    auto* xControls = new QWidget;
+    auto* xLayout = new QGridLayout(xControls);
+    xLayout->setContentsMargins(0, 0, 0, 0);
+    xLayout->setHorizontalSpacing(8);
+    xLayout->setVerticalSpacing(6);
+    xLayout->addWidget(new QLabel(QStringLiteral("X 轴位置")), 0, 0);
     m_xPosSlider = new QSlider(Qt::Horizontal);
     m_xPosSlider->setRange(0, 1000);
     m_xPosSlider->setValue(500);
-    agLayout->addWidget(m_xPosSlider);
+    m_xPosSlider->setMaximumWidth(480);
+    xLayout->addWidget(m_xPosSlider, 0, 1);
 
-    auto* xzRow = new QHBoxLayout;
-    xzRow->addWidget(new QLabel(QStringLiteral("X 轴缩放：")));
+    xLayout->addWidget(new QLabel(QStringLiteral("X 轴缩放")), 1, 0);
     m_xZoomSlider = new QSlider(Qt::Horizontal);
-    m_xZoomSlider->setRange(1, 1000);
-    m_xZoomSlider->setValue(1000);
-    xzRow->addWidget(m_xZoomSlider, 1);
-    m_xZoomEdit = new QLineEdit("100%");
-    m_xZoomEdit->setMaximumWidth(60);
+    // Store magnification * 100: 100 means 1.00x.
+    m_xZoomSlider->setRange(100, 1000);
+    m_xZoomSlider->setValue(100);
+    m_xZoomSlider->setMaximumWidth(410);
+    xLayout->addWidget(m_xZoomSlider, 1, 1);
+    m_xZoomEdit = new QLineEdit("1.00x");
+    m_xZoomEdit->setFixedWidth(72);
     m_xZoomEdit->setReadOnly(true);
-    xzRow->addWidget(m_xZoomEdit);
-    agLayout->addLayout(xzRow);
-
-    // Y-axis
-    auto* yzRow = new QHBoxLayout;
-    yzRow->addWidget(new QLabel(QStringLiteral("Y 轴缩放：")));
-    m_yZoomSlider = new QSlider(Qt::Horizontal);
-    m_yZoomSlider->setRange(10, 1000);
-    m_yZoomSlider->setValue(100);
-    yzRow->addWidget(m_yZoomSlider, 1);
-    m_yZoomEdit = new QLineEdit("1.0x");
-    m_yZoomEdit->setMaximumWidth(60);
-    m_yZoomEdit->setReadOnly(true);
-    yzRow->addWidget(m_yZoomEdit);
-    agLayout->addLayout(yzRow);
-
-    agLayout->addWidget(new QLabel(QStringLiteral("Y 轴显示位置：")));
-    m_yPosSlider = new QSlider(Qt::Horizontal);
-    m_yPosSlider->setRange(0, 1000);
-    m_yPosSlider->setValue(500);
-    agLayout->addWidget(m_yPosSlider);
+    xLayout->addWidget(m_xZoomEdit, 1, 2);
 
     m_viewInfoLabel = new QLineEdit;
     m_viewInfoLabel->setReadOnly(true);
+    m_viewInfoLabel->setMaximumWidth(550);
     m_viewInfoLabel->setStyleSheet("font-size: 11px;");
-    agLayout->addWidget(m_viewInfoLabel);
+    xLayout->addWidget(m_viewInfoLabel, 2, 0, 1, 3);
+    xLayout->setColumnStretch(1, 1);
+    agLayout->addWidget(xControls, 1, Qt::AlignTop);
 
-    layout->addWidget(axisGroup);
+    auto* separator = new QFrame;
+    separator->setFrameShape(QFrame::VLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    agLayout->addWidget(separator);
+
+    // Y-axis controls follow the axis direction.
+    auto* yZoomLayout = new QVBoxLayout;
+    auto* yZoomTitle = new QLabel(QStringLiteral("Y 轴缩放"));
+    yZoomTitle->setAlignment(Qt::AlignCenter);
+    yZoomLayout->addWidget(yZoomTitle);
+    m_yZoomSlider = new QSlider(Qt::Vertical);
+    m_yZoomSlider->setRange(10, 1000);
+    m_yZoomSlider->setValue(100);
+    m_yZoomSlider->setMinimumHeight(110);
+    m_yZoomSlider->setMaximumHeight(150);
+    m_yZoomSlider->setTickPosition(QSlider::TicksRight);
+    m_yZoomSlider->setTickInterval(100);
+    yZoomLayout->addWidget(m_yZoomSlider, 1, Qt::AlignHCenter);
+    m_yZoomEdit = new QLineEdit("1.00x");
+    m_yZoomEdit->setFixedWidth(72);
+    m_yZoomEdit->setReadOnly(true);
+    yZoomLayout->addWidget(m_yZoomEdit, 0, Qt::AlignHCenter);
+    agLayout->addLayout(yZoomLayout);
+
+    auto* yPosLayout = new QVBoxLayout;
+    auto* yPosTitle = new QLabel(QStringLiteral("Y 轴位置"));
+    yPosTitle->setAlignment(Qt::AlignCenter);
+    yPosLayout->addWidget(yPosTitle);
+    m_yPosSlider = new QSlider(Qt::Vertical);
+    m_yPosSlider->setRange(0, 1000);
+    m_yPosSlider->setValue(500);
+    m_yPosSlider->setMinimumHeight(110);
+    m_yPosSlider->setMaximumHeight(150);
+    m_yPosSlider->setTickPosition(QSlider::TicksRight);
+    m_yPosSlider->setTickInterval(100);
+    yPosLayout->addWidget(m_yPosSlider, 1, Qt::AlignHCenter);
+    auto* yDirection = new QLabel(QStringLiteral("下 ↕ 上"));
+    yDirection->setAlignment(Qt::AlignCenter);
+    yPosLayout->addWidget(yDirection);
+    agLayout->addLayout(yPosLayout);
+
+    layout->addWidget(axisGroup, 0, 1);
 
     // ── Frame size ────────────────────────────────────────────────────────
     auto* frameGroup = new QGroupBox(QStringLiteral("全局帧长"));
     auto* fgLayout = new QHBoxLayout(frameGroup);
-    m_frameSizeSlider = new QSlider(Qt::Horizontal);
+    fgLayout->setContentsMargins(10, 8, 10, 8);
+
+    auto* scaleLayout = new QVBoxLayout;
+    scaleLayout->setSpacing(3);
+    auto* maxFrameLabel = new QLabel(QStringLiteral("4096"));
+    maxFrameLabel->setAlignment(Qt::AlignCenter);
+    scaleLayout->addWidget(maxFrameLabel);
+
+    m_frameSizeSlider = new QSlider(Qt::Vertical);
     m_frameSizeSlider->setRange(6, 12); // 2^6=64 to 2^12=4096 (exponential)
     m_frameSizeSlider->setValue(9);     // 512 (reference program default)
-    fgLayout->addWidget(m_frameSizeSlider, 1);
+    m_frameSizeSlider->setMinimumHeight(105);
+    m_frameSizeSlider->setMaximumHeight(140);
+    m_frameSizeSlider->setTickPosition(QSlider::TicksRight);
+    m_frameSizeSlider->setTickInterval(1);
+    scaleLayout->addWidget(m_frameSizeSlider, 1, Qt::AlignHCenter);
+
+    auto* minFrameLabel = new QLabel(QStringLiteral("64"));
+    minFrameLabel->setAlignment(Qt::AlignCenter);
+    scaleLayout->addWidget(minFrameLabel);
+
+    auto* valueLayout = new QVBoxLayout;
+    valueLayout->addStretch(1);
+    auto* currentFrameLabel = new QLabel(QStringLiteral("当前"));
+    currentFrameLabel->setAlignment(Qt::AlignCenter);
+    valueLayout->addWidget(currentFrameLabel);
     m_frameSizeLabel = new QLabel(QStringLiteral("512"));
-    m_frameSizeLabel->setFixedWidth(48);
+    m_frameSizeLabel->setFixedSize(58, 28);
     m_frameSizeLabel->setAlignment(Qt::AlignCenter);
     m_frameSizeLabel->setStyleSheet(QStringLiteral(
         "QLabel { background: palette(window); border: 1px solid palette(mid); "
         "border-radius: 4px; padding: 2px; font-weight: bold; }"));
-    fgLayout->addWidget(m_frameSizeLabel);
-    layout->addWidget(frameGroup);
+    valueLayout->addWidget(m_frameSizeLabel, 0, Qt::AlignHCenter);
+    valueLayout->addStretch(1);
+
+    fgLayout->addStretch(1);
+    fgLayout->addLayout(scaleLayout);
+    fgLayout->addSpacing(8);
+    fgLayout->addLayout(valueLayout);
+    fgLayout->addStretch(1);
+    layout->addWidget(frameGroup, 0, 2);
 
     // ── VAD ───────────────────────────────────────────────────────────────
     auto* vadGroup = new QGroupBox(QStringLiteral("VAD"));
@@ -129,17 +213,19 @@ void ControlPanel::setupUi() {
 
     auto* vadRow = new QHBoxLayout;
     m_vadAlgoCombo = new QComboBox;
-    vadRow->addWidget(m_vadAlgoCombo, 1);
+    m_vadAlgoCombo->setMaximumWidth(320);
+    vadRow->addWidget(m_vadAlgoCombo);
     m_vadRunBtn = new QPushButton(QStringLiteral("执行端点检测"));
     vadRow->addWidget(m_vadRunBtn);
+    vadRow->addStretch(1);
     vgLayout->addLayout(vadRow);
 
     m_vadParamsContainer = new QWidget;
     m_vadParamsContainer->setLayout(new QVBoxLayout);
     vgLayout->addWidget(m_vadParamsContainer);
 
-    layout->addWidget(vadGroup);
-    layout->addStretch();
+    layout->addWidget(vadGroup, 0, 3);
+    layout->setRowStretch(1, 1);
 
     // ── Connections ───────────────────────────────────────────────────────
     connect(m_xZoomSlider, &QSlider::valueChanged, this, &ControlPanel::onSliderChanged);
@@ -166,20 +252,20 @@ void ControlPanel::setupUi() {
 
 // ── Accessors ───────────────────────────────────────────────────────────────
 
-double ControlPanel::xZoom() const { return m_xZoomSlider->value() / 1000.0; }
+double ControlPanel::xZoom() const { return m_xZoomSlider->value() / 100.0; }
 double ControlPanel::xPosition() const { return m_xPosSlider->value() / 1000.0; }
 double ControlPanel::yZoom() const { return m_yZoomSlider->value() / 100.0; }
 double ControlPanel::yPosition() const { return m_yPosSlider->value() / 1000.0; }
 
 double ControlPanel::xViewMin() const {
-    double viewable = m_maxIndex * xZoom();
+    double viewable = m_maxIndex / xZoom();
     double slack = m_maxIndex - viewable;
     double offset = (xPosition() - 0.5) * slack;
     double center = m_maxIndex * 0.5 + offset;
     return std::max(0.0, center - viewable / 2);
 }
 double ControlPanel::xViewMax() const {
-    double viewable = m_maxIndex * xZoom();
+    double viewable = m_maxIndex / xZoom();
     double slack = m_maxIndex - viewable;
     double offset = (xPosition() - 0.5) * slack;
     double center = m_maxIndex * 0.5 + offset;
@@ -224,12 +310,14 @@ void ControlPanel::setChartMaxIndex(float idx) {
 void ControlPanel::updateXZoomRange() {
     if (m_maxIndex <= 0 || m_frameSizeSlider->value() <= 0) return;
     int frameSize = 1 << m_frameSizeSlider->value();
-    // min zoom = 5*frameSize visible on screen
-    int minVal = std::max(1, (int)std::ceil(5000.0 * frameSize / m_maxIndex));
-    minVal = std::min(minVal, 1000);
-    m_xZoomSlider->setRange(minVal, 1000);
-    if (m_xZoomSlider->value() < minVal)
-        m_xZoomSlider->setValue(minVal);
+    // 1.00x shows the full signal. Limit maximum magnification so at least
+    // five complete frames remain visible.
+    const double maxMagnification = m_maxIndex / (5.0 * frameSize);
+    const int maxVal = std::clamp(
+        static_cast<int>(std::floor(maxMagnification * 100.0)), 100, 100000);
+    m_xZoomSlider->setRange(100, maxVal);
+    if (m_xZoomSlider->value() > maxVal)
+        m_xZoomSlider->setValue(maxVal);
 }
 void ControlPanel::setAutoYRange(float yMin, float yMax) {
     m_yAutoMin = yMin; m_yAutoMax = yMax;
@@ -241,8 +329,10 @@ void ControlPanel::setAutoYRange(float yMin, float yMax) {
 // ── Slider updates ──────────────────────────────────────────────────────────
 
 void ControlPanel::onSliderChanged() {
-    m_xZoomEdit->setText(QStringLiteral("%1%").arg((int)(xZoom() * 100)));
-    m_yZoomEdit->setText(QStringLiteral("%1x").arg(yZoom(), 0, 'f', 1));
+    m_xZoomEdit->setText(
+        QStringLiteral("%1x").arg(xZoom(), 0, 'f', 2));
+    m_yZoomEdit->setText(
+        QStringLiteral("%1x").arg(yZoom(), 0, 'f', 2));
     updateViewInfo();
 
     // Apply to chart widget
@@ -361,9 +451,12 @@ void ControlPanel::setVadParams(const QVector<VadParamDef>& params) {
             slider->setRange(p.min / p.step, p.max / p.step);
             slider->setValue(p.value / p.step);
         }
-        row->addWidget(slider, 1);
+        slider->setMaximumWidth(360);
+        row->addWidget(slider);
 
         auto* valLabel = new QLabel;
+        valLabel->setFixedWidth(64);
+        valLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         if (p.kind == VadParamKind::Int)
             valLabel->setText(QString::number((int)p.value));
         else
@@ -382,6 +475,7 @@ void ControlPanel::setVadParams(const QVector<VadParamDef>& params) {
             emit vadParamChanged(p.key, val);
         });
 
+        row->addStretch(1);
         pl->addLayout(row);
         m_vadParamSliders.append({p.key, slider});
     }

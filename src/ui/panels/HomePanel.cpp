@@ -31,8 +31,8 @@ HomePanel::HomePanel(QWidget* parent) : QWidget(parent) {
     layout->addWidget(devLabel);
 
     auto* linkLabel = new QLabel(
-        QStringLiteral("<a href='https://github.com/fans963/vad_flutter_and_rust'>"
-                       "github.com/fans963/vad_flutter_and_rust</a>"));
+        QStringLiteral("<a href='https://github.com/fans963/vad'>"
+                       "github.com/fans963/vad</a>"));
     linkLabel->setAlignment(Qt::AlignCenter);
     linkLabel->setOpenExternalLinks(true);
     linkLabel->setStyleSheet("font-size: 13px;");

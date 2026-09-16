@@ -82,10 +82,12 @@ if(BUILD_TESTING)
         src/core/Types.cpp
         src/core/DownSampler.cpp
         src/dsp/DspUtils.cpp
+        src/dsp/EnergyCalculator.cpp
         src/dsp/FftProcessor.cpp
         src/dsp/FeatureExtractor.cpp
         src/dsp/LpcProcessor.cpp
         src/dsp/PitchDetector.cpp
+        src/dsp/ZeroCrossingRate.cpp
         src/vad/ReferenceVad.cpp
     )
     target_include_directories(MyWaveDspTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

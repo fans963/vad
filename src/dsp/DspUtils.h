@@ -50,15 +50,17 @@ inline float frameAvgAmplitude(const float* frame, int frameSize) {
     return sum / frameSize;
 }
 
-// ── Short-time energy (dB scale) ────────────────────────────────────────────
-inline float frameEnergyDB(const float* frame, int frameSize) {
+// ── Short-time energy (linear scale) ────────────────────────────────────────
+// Samples are stored as normalized floats. Convert them back to the PCM16
+// amplitude range, then use the direct sum of squares used by the reference
+// implementation. No logarithmic/dB conversion is applied here.
+inline float frameEnergyLinear(const float* frame, int frameSize) {
     float sum = 0.0f;
     for (int i = 0; i < frameSize; ++i) {
         float s = frame[i] * 32768.0f;
         sum += s * s;
     }
-    float mean = sum / frameSize;
-    return mean > 0.0f ? 10.0f * std::log10(mean) : -100.0f;
+    return sum;
 }
 
 // ── Short-time zero-crossing rate ───────────────────────────────────────────

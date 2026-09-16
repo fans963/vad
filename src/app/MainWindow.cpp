@@ -20,6 +20,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QActionGroup>
+#include <QSplitter>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(QStringLiteral("MyWave - 语音波形与特征分析"));
@@ -162,11 +163,10 @@ void MainWindow::setupUi() {
     toolbar->addWidget(addCurveBtn);
     addToolBar(Qt::TopToolBarArea, toolbar);
 
-    // ── Chart widget (fill space) ───────────────────────────────────────
+    // ── Resizable chart and lower-panel workspace ──────────────────────
     m_chartWidget = new ChartWidget;
     m_controlPanel = new ControlPanel;
     m_controlPanel->setChartWidget(m_chartWidget);
-    mainLayout->addWidget(m_chartWidget, 1);
 
     // ── Bottom panel: stacked pages ─────────────────────────────────────
     m_panelStack = new QStackedWidget;
@@ -174,7 +174,24 @@ void MainWindow::setupUi() {
     m_infoPanel = new InfoPanel;
     m_panelStack->addWidget(m_infoPanel);
     m_panelStack->addWidget(m_controlPanel);
-    mainLayout->addWidget(m_panelStack);
+
+    auto* contentSplitter = new QSplitter(Qt::Vertical, central);
+    contentSplitter->setChildrenCollapsible(false);
+    contentSplitter->setHandleWidth(6);
+    contentSplitter->addWidget(m_chartWidget);
+    contentSplitter->addWidget(m_panelStack);
+    contentSplitter->setStretchFactor(0, 3);
+    contentSplitter->setStretchFactor(1, 1);
+    contentSplitter->setSizes({650, 250});
+    contentSplitter->setStyleSheet(QStringLiteral(
+        "QSplitter::handle:vertical {"
+        "  background: palette(mid);"
+        "  margin: 2px 0;"
+        "}"));
+
+    m_chartWidget->setMinimumHeight(180);
+    m_panelStack->setMinimumHeight(120);
+    mainLayout->addWidget(contentSplitter, 1);
 
     // ── Navigation bar (3 tabs like Flutter) ────────────────────────────
     auto* navBar = new QToolBar(QStringLiteral("Pages"));
