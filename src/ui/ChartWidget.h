@@ -24,6 +24,10 @@ public:
     QStringList allSeriesKeys() const;
     void setSelectedKey(const QString& key);
     QString selectedKey() const;
+    void setSelectedSeriesYTransform(double scale, double position);
+    QPair<double, double> selectedSeriesYTransform() const;
+    void setGlobalYTransform(double scale, double position);
+    QPair<double, double> globalYTransform() const;
     bool isVisible(const QString& filePath, DataType dt) const;
     void setSeriesVisible(const QString& filePath, DataType dt, bool visible);
     void setSeriesColor(const QString& filePath, DataType dt, const QColor& color);
@@ -50,6 +54,7 @@ public:
 private:
     void applyPlotPalette();
     void updateFrameGridStyle();
+    void applyGlobalYRange();
     QColor seriesColor(const QString& filePath, DataType dt) const;
     bool isVisibleByKey(const QString& key) const;
 
@@ -71,11 +76,18 @@ private:
     struct Meta {
         QColor color;
         bool visible = true;
+        double yScale = 1.0;
+        double yPosition = 0.5;
     };
     QHash<QString, Meta> m_meta;
     QString m_selectedKey;
     int m_nextColorIndex = 0;
     bool m_stackedSeries = false;
+    int m_stackedLaneCount = 0;
+    double m_autoYMin = -0.5;
+    double m_autoYMax = 0.5;
+    double m_globalYScale = 1.0;
+    double m_globalYPosition = 0.5;
 
     // Default color palette
     static constexpr int kPaletteSize = 8;

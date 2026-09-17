@@ -9,10 +9,12 @@
     {
       "name": "default",
       "displayName": "Default (Debug)",
-      "description": "Default build with vcpkg using Ninja",
+      "description": "Clang debug build with vcpkg using Ninja",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
@@ -21,7 +23,7 @@
     {
       "name": "release",
       "displayName": "Release",
-      "description": "Release build with vcpkg using Ninja",
+      "description": "Clang release build with vcpkg using Ninja",
       "inherits": "default",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"

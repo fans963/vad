@@ -3,6 +3,7 @@
 #include <QMouseEvent>
 #include <QMenu>
 #include <QPalette>
+#include <algorithm>
 
 namespace {
 
@@ -247,9 +248,27 @@ void ChartWidget::setXRange(double min, double max) {
 }
 
 void ChartWidget::setYRange(double min, double max) {
-    if (m_stackedSeries) return;
-    m_plot->yAxis->setRange(min, max);
+    if (max <= min) return;
+    m_autoYMin = min;
+    m_autoYMax = max;
+    applyGlobalYRange();
     m_plot->replot(QCustomPlot::rpQueuedReplot);
+}
+
+void ChartWidget::applyGlobalYRange() {
+    const double baseMin = m_stackedSeries ? 0.0 : m_autoYMin;
+    const double baseMax = m_stackedSeries
+        ? std::max(1, m_stackedLaneCount)
+        : m_autoYMax;
+    const double baseRange = std::max(1e-12, baseMax - baseMin);
+    const double viewRange = baseRange / m_globalYScale;
+    const double baseCenter = 0.5 * (baseMin + baseMax);
+    // Position 50% keeps the automatic range centred. Moving towards either
+    // end translates the viewport by up to one complete automatic range.
+    const double offset = (m_globalYPosition - 0.5) * 2.0 * baseRange;
+    const double center = baseCenter + offset;
+    m_plot->yAxis->setRange(center - viewRange * 0.5,
+                            center + viewRange * 0.5);
 }
 
 void ChartWidget::setPlayheadPosition(float x) {
@@ -273,6 +292,7 @@ void ChartWidget::rebuildSeries() {
         if (isVisibleByKey(key) && m_data[key].dataType != DataType::Spectrogram)
             ++lineSeriesCount;
     m_stackedSeries = lineSeriesCount > 1;
+    m_stackedLaneCount = lineSeriesCount;
     int lane = 0;
 
     for (const auto& key : allSeriesKeys()) {
@@ -315,12 +335,25 @@ void ChartWidget::rebuildSeries() {
 
         // Copy data
         QVector<double> xs(chart.points.size()), ys(chart.points.size());
-        const double chartRange = std::max(1e-12, double(chart.maxY - chart.minY));
+        const double rawChartRange = double(chart.maxY - chart.minY);
+        const double chartRange = std::max(1e-12, rawChartRange);
+        const double chartCenter = 0.5 * double(chart.minY + chart.maxY);
         for (int i = 0; i < chart.points.size(); ++i) {
             xs[i] = chart.points[i].x;
-            ys[i] = m_stackedSeries
-                ? lane + 0.1 + 0.8 * (chart.points[i].y - chart.minY) / chartRange
-                : chart.points[i].y;
+            if (m_stackedSeries) {
+                const double normalized = std::abs(rawChartRange) > 1e-12
+                    ? (chart.points[i].y - chart.minY) / chartRange
+                    : 0.5;
+                const double transformed = 0.5
+                    + (normalized - 0.5) * meta.yScale
+                    + (meta.yPosition - 0.5) * 2.0;
+                ys[i] = lane + 0.1 + 0.8 * transformed;
+            } else {
+                const double offset = (meta.yPosition - 0.5) * 2.0 * chartRange;
+                ys[i] = chartCenter
+                    + (chart.points[i].y - chartCenter) * meta.yScale
+                    + offset;
+            }
         }
         ++lane;
 
@@ -367,11 +400,11 @@ void ChartWidget::rebuildSeries() {
 
     if (m_stackedSeries) {
         m_plot->yAxis->setLabel(QStringLiteral("特征曲线（独立归一化分层）"));
-        m_plot->yAxis->setRange(0, std::max(1, lineSeriesCount));
     } else {
         m_plot->yAxis->setLabel(QStringLiteral("幅度 / 特征值"));
     }
 
+    applyGlobalYRange();
     m_plot->replot();
 }
 
@@ -425,6 +458,31 @@ QString ChartWidget::selectedKey() const { return m_selectedKey; }
 void ChartWidget::setSelectedKey(const QString& key) {
     m_selectedKey = key;
     rebuildSeries();
+}
+
+void ChartWidget::setSelectedSeriesYTransform(double scale, double position) {
+    auto it = m_meta.find(m_selectedKey);
+    if (it == m_meta.end()) return;
+    it->yScale = std::clamp(scale, 0.1, 10.0);
+    it->yPosition = std::clamp(position, 0.0, 1.0);
+    rebuildSeries();
+}
+
+QPair<double, double> ChartWidget::selectedSeriesYTransform() const {
+    auto it = m_meta.constFind(m_selectedKey);
+    if (it == m_meta.cend()) return {1.0, 0.5};
+    return {it->yScale, it->yPosition};
+}
+
+void ChartWidget::setGlobalYTransform(double scale, double position) {
+    m_globalYScale = std::clamp(scale, 0.1, 10.0);
+    m_globalYPosition = std::clamp(position, 0.0, 1.0);
+    applyGlobalYRange();
+    m_plot->replot(QCustomPlot::rpQueuedReplot);
+}
+
+QPair<double, double> ChartWidget::globalYTransform() const {
+    return {m_globalYScale, m_globalYPosition};
 }
 
 int ChartWidget::plotWidth() const { return m_plot->viewport().width(); }

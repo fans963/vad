@@ -21,9 +21,7 @@ protected:
 
 private slots:
     void onOpenFile();
-    void openIntoSlot(int slot);
-    void saveSlot(int slot);
-    void linkFirstTwoFiles();
+    void saveCurrentSelection();
     void exportChart();
     void exportEffectiveMfcc();
     void onChartEvent(const ChartEvent& event);
@@ -56,5 +54,4 @@ private:
 
     // Audio info tracking
     QHash<QString, AudioInfo> m_audioInfoMap;
-    QString m_fileSlots[3];
 };

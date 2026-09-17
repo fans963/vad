@@ -122,9 +122,6 @@ void MainWindow::setupUi() {
     auto* toolbar = new QToolBar(QStringLiteral("Main"));
     toolbar->setMovable(false);
     toolbar->addAction(QStringLiteral("打开..."), this, &MainWindow::onOpenFile);
-    for (int slot = 0; slot < 3; ++slot)
-        toolbar->addAction(QStringLiteral("打开%1").arg(slot + 1), this,
-                           [this, slot] { openIntoSlot(slot); });
     toolbar->addSeparator();
     m_fileSelector = new QComboBox;
     m_fileSelector->setMinimumWidth(200);
@@ -222,15 +219,9 @@ void MainWindow::setupMenus() {
     auto* fileMenu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
     fileMenu->addAction(QStringLiteral("打开多个文件..."), QKeySequence::Open,
                         this, &MainWindow::onOpenFile);
-    for (int slot = 0; slot < 3; ++slot)
-        fileMenu->addAction(QStringLiteral("打开文件 %1...").arg(slot + 1),
-                            this, [this, slot] { openIntoSlot(slot); });
-    fileMenu->addAction(QStringLiteral("合并文件 1 和 2..."),
-                        this, &MainWindow::linkFirstTwoFiles);
     fileMenu->addSeparator();
-    for (int slot = 0; slot < 3; ++slot)
-        fileMenu->addAction(QStringLiteral("文件 %1 选区另存为...").arg(slot + 1),
-                            this, [this, slot] { saveSlot(slot); });
+    fileMenu->addAction(QStringLiteral("当前音频选区另存为..."),
+                        this, &MainWindow::saveCurrentSelection);
     fileMenu->addAction(QStringLiteral("导出当前图表..."), this, &MainWindow::exportChart);
     fileMenu->addSeparator();
     fileMenu->addAction(QStringLiteral("退出"), QKeySequence::Quit,
@@ -317,33 +308,19 @@ void MainWindow::onOpenFile() {
         "Audio Files (*.wav *.mp3 *.flac *.aac *.ogg *.m4a);;All Files (*)");
     auto files = QFileDialog::getOpenFileNames(this,
         QStringLiteral("Open Audio File"), QString(), filter);
-    int nextSlot = 0;
-    for (const auto& f : files) {
+    for (const auto& f : files)
         loadAudioFile(f);
-        while (nextSlot < 3 && !m_fileSlots[nextSlot].isEmpty()) ++nextSlot;
-        if (nextSlot < 3) m_fileSlots[nextSlot++] = f;
-    }
 }
 
-void MainWindow::openIntoSlot(int slot) {
-    const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("打开文件 %1").arg(slot + 1), QString(),
-        QStringLiteral("音频文件 (*.wav *.mp3 *.flac *.aac *.ogg *.m4a);;所有文件 (*)"));
-    if (path.isEmpty()) return;
-    loadAudioFile(path);
-    m_fileSlots[slot] = path;
-    m_fileSelector->setCurrentIndex(m_fileSelector->findData(path));
-}
-
-void MainWindow::saveSlot(int slot) {
-    const QString source = m_fileSlots[slot];
+void MainWindow::saveCurrentSelection() {
+    const QString source = currentFilePath();
     if (source.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("文件未打开"),
-                             QStringLiteral("请先打开文件 %1。").arg(slot + 1));
+                             QStringLiteral("请先打开并选择一个音频文件。"));
         return;
     }
     QString output = QFileDialog::getSaveFileName(
-        this, QStringLiteral("文件 %1 另存为").arg(slot + 1),
+        this, QStringLiteral("当前音频选区另存为"),
         QFileInfo(source).completeBaseName() + QStringLiteral("_selection.wav"),
         QStringLiteral("WAV 音频 (*.wav)"));
     if (output.isEmpty()) return;
@@ -357,27 +334,6 @@ void MainWindow::saveSlot(int slot) {
         QMessageBox::critical(this, QStringLiteral("保存失败"), QStringLiteral("无法保存 WAV 文件。"));
     else
         statusBar()->showMessage(QStringLiteral("已保存：%1").arg(output), 5000);
-}
-
-void MainWindow::linkFirstTwoFiles() {
-    if (m_fileSlots[0].isEmpty() || m_fileSlots[1].isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("无法合并"),
-                             QStringLiteral("请先打开文件 1 和文件 2。"));
-        return;
-    }
-    QString output = QFileDialog::getSaveFileName(this, QStringLiteral("合并文件 1 和 2"),
-                                                   QStringLiteral("linked.wav"),
-                                                   QStringLiteral("WAV 音频 (*.wav)"));
-    if (output.isEmpty()) return;
-    if (!output.endsWith(QStringLiteral(".wav"), Qt::CaseInsensitive)) output += QStringLiteral(".wav");
-    if (!m_engine->concatenate(m_fileSlots[0], m_fileSlots[1], output)) {
-        QMessageBox::critical(this, QStringLiteral("合并失败"),
-                              QStringLiteral("两个文件的采样率必须相同。"));
-        return;
-    }
-    loadAudioFile(output);
-    m_fileSlots[2] = output;
-    statusBar()->showMessage(QStringLiteral("已合并为文件 3：%1").arg(output), 5000);
 }
 
 void MainWindow::exportChart() {

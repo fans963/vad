@@ -274,16 +274,14 @@ double ControlPanel::xViewMax() const {
 double ControlPanel::yViewMin() const {
     double range = m_yAutoMax - m_yAutoMin;
     double viewable = range / yZoom();
-    double slack = range - viewable;
-    double offset = (yPosition() - 0.5) * slack;
+    double offset = (yPosition() - 0.5) * 2.0 * range;
     double center = m_yAutoMin + range * 0.5 + offset;
     return center - viewable / 2;
 }
 double ControlPanel::yViewMax() const {
     double range = m_yAutoMax - m_yAutoMin;
     double viewable = range / yZoom();
-    double slack = range - viewable;
-    double offset = (yPosition() - 0.5) * slack;
+    double offset = (yPosition() - 0.5) * 2.0 * range;
     double center = m_yAutoMin + range * 0.5 + offset;
     return center + viewable / 2;
 }
@@ -323,7 +321,7 @@ void ControlPanel::setAutoYRange(float yMin, float yMax) {
     m_yAutoMin = yMin; m_yAutoMax = yMax;
     updateViewInfo();
     if (m_chartWidget)
-        m_chartWidget->setYRange(yViewMin(), yViewMax());
+        m_chartWidget->setYRange(m_yAutoMin, m_yAutoMax);
 }
 
 // ── Slider updates ──────────────────────────────────────────────────────────
@@ -338,7 +336,11 @@ void ControlPanel::onSliderChanged() {
     // Apply to chart widget
     if (m_chartWidget) {
         m_chartWidget->setXRange(xViewMin(), xViewMax());
-        m_chartWidget->setYRange(yViewMin(), yViewMax());
+        if (!m_chartWidget->selectedKey().isEmpty()) {
+            m_chartWidget->setSelectedSeriesYTransform(yZoom(), yPosition());
+        } else {
+            m_chartWidget->setGlobalYTransform(yZoom(), yPosition());
+        }
     }
 
     m_debounce->start();
@@ -347,16 +349,25 @@ void ControlPanel::onSliderChanged() {
 void ControlPanel::emitViewRangeChanged() { emit viewRangeChanged(); }
 
 void ControlPanel::updateViewInfo() {
+    const bool hasSelectedSeries = m_chartWidget
+        && !m_chartWidget->selectedKey().isEmpty();
+    const QString yInfo = hasSelectedSeries
+        ? QStringLiteral("曲线 Y: %1x, 位置 %2%")
+              .arg(yZoom(), 0, 'f', 2)
+              .arg(yPosition() * 100.0, 0, 'f', 1)
+        : QStringLiteral("全局 Y: %1x, 位置 %2%")
+              .arg(yZoom(), 0, 'f', 2)
+              .arg(yPosition() * 100.0, 0, 'f', 1);
     m_viewInfoLabel->setText(
-        QStringLiteral("X: %1-%2  |  Y: %3-%4  |  Total: %5")
+        QStringLiteral("X: %1-%2  |  %3  |  Total: %4")
             .arg(xViewMin(), 0, 'f', 0).arg(xViewMax(), 0, 'f', 0)
-            .arg(yViewMin(), 0, 'f', 3).arg(yViewMax(), 0, 'f', 3)
-            .arg(m_maxIndex, 0, 'f', 0));
+            .arg(yInfo).arg(m_maxIndex, 0, 'f', 0));
 }
 
 // ── Series management ───────────────────────────────────────────────────────
 
 void ControlPanel::refreshSeriesSelector() {
+    const QString previousKey = m_seriesCombo->currentData().toString();
     m_seriesCombo->blockSignals(true);
     m_seriesCombo->clear();
     if (m_chartWidget) {
@@ -369,7 +380,11 @@ void ControlPanel::refreshSeriesSelector() {
             m_seriesCombo->addItem(label, k);
         }
     }
+    int index = m_seriesCombo->findData(previousKey);
+    if (index < 0) index = 0;
+    m_seriesCombo->setCurrentIndex(index);
     m_seriesCombo->blockSignals(false);
+    onSeriesSelectorChanged(index);
 }
 
 void ControlPanel::onSeriesSelectorChanged(int index) {
@@ -377,6 +392,22 @@ void ControlPanel::onSeriesSelectorChanged(int index) {
     QString key = m_seriesCombo->itemData(index).toString();
     emit selectionChanged(key);
     if (m_chartWidget) m_chartWidget->setSelectedKey(key);
+
+    const bool hasSelectedSeries = !key.isEmpty() && m_chartWidget;
+    const auto transform = hasSelectedSeries
+        ? m_chartWidget->selectedSeriesYTransform()
+        : (m_chartWidget
+               ? m_chartWidget->globalYTransform()
+               : QPair<double, double>{1.0, 0.5});
+    {
+        const QSignalBlocker zoomBlocker(m_yZoomSlider);
+        const QSignalBlocker positionBlocker(m_yPosSlider);
+        m_yZoomSlider->setValue(qRound(transform.first * 100.0));
+        m_yPosSlider->setValue(qRound(transform.second * 1000.0));
+    }
+    m_yZoomEdit->setText(
+        QStringLiteral("%1x").arg(transform.first, 0, 'f', 2));
+    updateViewInfo();
 }
 
 void ControlPanel::onShowColorPicker() {
