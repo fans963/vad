@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
+
+# Fallback to in-tree vcpkg submodule if CMAKE_TOOLCHAIN_FILE is not set
+if(NOT CMAKE_TOOLCHAIN_FILE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "vcpkg toolchain")
+endif()
+
 project(MyWaveQt VERSION 1.0.0 LANGUAGES CXX)
 
 # ── Compiler cache (ccache on Linux/macOS, sccache on Windows) ──────────────
@@ -17,23 +23,31 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-# Find Qt6 (via vcpkg)
+# Find Qt6 (system-installed)
 find_package(Qt6 COMPONENTS Core Gui Widgets PrintSupport Concurrent OpenGLWidgets REQUIRED)
 
 # Find FFTW3 (via vcpkg)
 find_package(FFTW3 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
-# ── Auto-discover source files (includes 3rdparty/qcustomplot.cpp) ──────────
+# Find mimalloc (via vcpkg)
+find_package(mimalloc CONFIG REQUIRED)
+
+# ── Auto-discover source files ──────────────────────────────────────────────
 file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 file(GLOB_RECURSE HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h")
 
 # ── Executable ───────────────────────────────────────────────────────────────
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+add_executable(${PROJECT_NAME}
+    ${SOURCES}
+    ${HEADERS}
+    "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/qcustomplot/qcustomplot.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/qcustomplot/qcustomplot.h"
+)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/3rdparty
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/qcustomplot
 )
 
 # ── QCustomPlot GPU acceleration (compiled from source in 3rdparty/) ───────
@@ -73,6 +87,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     FFTW3::fftw3
     Threads::Threads
     ${CMAKE_DL_LIBS}
+    $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>
 )
 
 if(UNIX AND NOT APPLE)
@@ -95,6 +110,12 @@ if(BUILD_TESTING)
         src/vad/ReferenceVad.cpp
     )
     target_include_directories(MyWaveDspTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(MyWaveDspTests PRIVATE Qt6::Core Qt6::Gui Qt6::Concurrent FFTW3::fftw3)
+    target_link_libraries(MyWaveDspTests PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Concurrent
+        FFTW3::fftw3
+        $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>
+    )
     add_test(NAME dsp_reference_parity COMMAND MyWaveDspTests)
 endif()

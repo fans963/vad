@@ -68,7 +68,7 @@ void ControlPanel::setupUi() {
     m_visibleBtn = new QPushButton(QStringLiteral("显示/隐藏"));
     m_visibleBtn->setMaximumWidth(80);
     btnRow->addWidget(m_visibleBtn);
-    m_playBtn = new QPushButton(QStringLiteral("播放选区"));
+    m_playBtn = new QPushButton(QStringLiteral("播放"));
     m_playBtn->setMaximumWidth(100);
     btnRow->addWidget(m_playBtn);
     m_stopBtn = new QPushButton(QStringLiteral("停止"));
@@ -446,7 +446,7 @@ void ControlPanel::onPlaySelected() {
     QString key = m_seriesCombo->currentData().toString();
     if (key.isEmpty()) return;
     auto [fp, dt] = parseSeriesKey(key);
-    emit playAudioRequested(fp, xPosition());
+    emit playAudioRequested(fp, 0.0);
 }
 
 void ControlPanel::onStop() { emit stopRequested(); }

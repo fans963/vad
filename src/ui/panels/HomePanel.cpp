@@ -17,7 +17,7 @@ HomePanel::HomePanel(QWidget* parent) : QWidget(parent) {
     layout->addSpacing(10);
 
     auto* subtitle = new QLabel(
-        QStringLiteral("语音波形、时域特征、频域特征与说话人识别\n"
+        QStringLiteral("语音波形、时域特征、频域特征与端点检测\n"
                        "可拖放音频或点击“打开”加载文件"));
     subtitle->setAlignment(Qt::AlignCenter);
     subtitle->setStyleSheet("font-size: 14px; color: #666;");

@@ -1,6 +1,5 @@
 #include "MainWindow.h"
 #include "../ui/panels/HomePanel.h"
-#include "../speaker/SpeakerDialog.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -257,6 +256,7 @@ void MainWindow::setupMenus() {
         {"幅度谱", DataType::Spectrum}, {"功率谱", DataType::PowerSpectrum},
         {"对数功率谱", DataType::LogSpectrum}, {"倒谱", DataType::Cepstrum},
         {"频谱的频谱", DataType::SpectrumFFT}, {"Mel 频谱", DataType::MelSpectrum},
+        {"二维语谱图", DataType::Spectrogram},
         {"MFCC", DataType::Mfcc}, {"LPC", DataType::Lpc}, {"LPCC", DataType::Lpcc},
         {"LPC 合成语音", DataType::LpcReconstructed},
     });
@@ -270,13 +270,6 @@ void MainWindow::setupMenus() {
         {"倒谱端点检测", DataType::CepstralVad},
     });
 
-    auto* displayMenu = menuBar()->addMenu(QStringLiteral("显示"));
-    addCurveMenu(displayMenu, {
-        {"语音波形", DataType::Audio}, {"左声道", DataType::AudioLeft},
-        {"右声道", DataType::AudioRight}, {"语谱图", DataType::Spectrogram},
-    });
-    displayMenu->addAction(QStringLiteral("取消选区"), m_chartWidget, &ChartWidget::clearSelection);
-
     auto* frameMenu = menuBar()->addMenu(QStringLiteral("帧长设置"));
     auto* frameGroup = new QActionGroup(this);
     for (int size : {256, 512, 1024}) {
@@ -288,17 +281,12 @@ void MainWindow::setupMenus() {
                 [this, size] { onGlobalFrameSizeChanged(size); });
     }
 
-    auto* speakerMenu = menuBar()->addMenu(QStringLiteral("说话人"));
-    speakerMenu->addAction(QStringLiteral("说话人识别 / 确认..."), this, [this] {
-        SpeakerDialog dialog(this);
-        dialog.exec();
-    });
-
     auto* viewMenu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
     viewMenu->addAction(QStringLiteral("还原位置"), this, [this]() {
         m_chartWidget->setXRange(0, 10000);
         m_chartWidget->setYRange(-0.5, 0.5);
     });
+    viewMenu->addAction(QStringLiteral("取消选区"), m_chartWidget, &ChartWidget::clearSelection);
 
     auto* helpMenu = menuBar()->addMenu(QStringLiteral("帮助(&H)"));
     helpMenu->addAction(QStringLiteral("关于 MyWave"), this, [this]() {
@@ -494,12 +482,11 @@ void MainWindow::onGlobalFrameSizeChanged(int newSize) {
     m_chartWidget->setFrameGrid(newSize);
 }
 
-void MainWindow::onPlayAudio(const QString& filePath, double startFraction) {
-    const auto range = m_chartWidget->selectionRange();
-    if (range.first >= 0.0 && range.second > range.first)
-        m_engine->playAudioRange(filePath, uint64_t(range.first), uint64_t(range.second));
-    else
-        m_engine->playAudio(filePath, startFraction);
+void MainWindow::onPlayAudio(const QString& filePath, double /*startFraction*/) {
+    const QString targetFile = filePath.isEmpty() ? currentFilePath() : filePath;
+    if (!targetFile.isEmpty()) {
+        m_engine->playAudio(targetFile, 0.0);
+    }
 }
 void MainWindow::onStopAudio() { m_engine->stopAudio(); }
 
