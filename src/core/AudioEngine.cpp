@@ -122,33 +122,57 @@ void AudioEngine::addFile(const QString& filePath, const QByteArray& fileData,
 void AudioEngine::addChart(const QString& filePath, DataType dataType) {
     qDebug() << "[ENGINE] addChart:" << filePath << dataTypeName(dataType);
 
-    // Check if already cached
     auto cached = m_cache.get(filePath, dataType);
     if (cached.has_value()) {
-        // Just re-send
-    } else {
+        recomputeRanges();
+        emitRangeSignals();
+
+        ChartEvent ev;
+        ev.type = ChartEvent::AddChart;
+        ev.key = filePath;
+        ev.dataType = dataType;
+        ev.chart = prepareChartForUi(*cached);
+        emit chartEvent(ev);
+
+        if (dataType == DataType::Vad) {
+            std::lock_guard<std::mutex> lock(m_vadDebugMutex);
+            if (m_vadDebug.contains(filePath)) {
+                ChartEvent debugEvent;
+                debugEvent.type = ChartEvent::UpdateVadDebug;
+                debugEvent.vadDebug = m_vadDebug.value(filePath);
+                emit chartEvent(debugEvent);
+            }
+        }
+        return;
+    }
+
+    (void)QtConcurrent::run([this, filePath, dataType]() {
         recomputeChartIntoCache(filePath, dataType);
-    }
+        QMetaObject::invokeMethod(this, [this, filePath, dataType]() {
+            recomputeRanges();
+            emitRangeSignals();
 
-    recomputeRanges();
-    emitRangeSignals();
+            auto chart = m_cache.get(filePath, dataType);
+            if (!chart) return;
 
-    auto chart = m_cache.get(filePath, dataType);
-    if (!chart) return;
+            ChartEvent ev;
+            ev.type = ChartEvent::AddChart;
+            ev.key = filePath;
+            ev.dataType = dataType;
+            ev.chart = prepareChartForUi(*chart);
+            emit chartEvent(ev);
 
-    ChartEvent ev;
-    ev.type = ChartEvent::AddChart;
-    ev.key = filePath;
-    ev.dataType = dataType;
-    ev.chart = prepareChartForUi(*chart);
-    emit chartEvent(ev);
-
-    if (dataType == DataType::Vad && m_vadDebug.contains(filePath)) {
-        ChartEvent debugEvent;
-        debugEvent.type = ChartEvent::UpdateVadDebug;
-        debugEvent.vadDebug = m_vadDebug.value(filePath);
-        emit chartEvent(debugEvent);
-    }
+            if (dataType == DataType::Vad) {
+                std::lock_guard<std::mutex> lock(m_vadDebugMutex);
+                if (m_vadDebug.contains(filePath)) {
+                    ChartEvent debugEvent;
+                    debugEvent.type = ChartEvent::UpdateVadDebug;
+                    debugEvent.vadDebug = m_vadDebug.value(filePath);
+                    emit chartEvent(debugEvent);
+                }
+            }
+        }, Qt::QueuedConnection);
+    });
 }
 
 void AudioEngine::removeChart(const QString& filePath, DataType dataType) {
@@ -288,7 +312,7 @@ bool AudioEngine::exportEffectiveMfcc(const QString& filePath,
     if (!audio) return false;
     ReferenceVad detector;
     const auto vad = detector.process(audio->samples, audio->info.sampleRate, m_config.frameSize);
-    const auto frames = frameSignal(audio->samples, m_config.frameSize, true, true, 0.95f);
+    const auto frames = frameSignalFast(audio->samples, m_config.frameSize, true, true, 0.95f);
     QFile file(outputPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) return false;
     QTextStream stream(&file);
@@ -296,11 +320,11 @@ bool AudioEngine::exportEffectiveMfcc(const QString& filePath,
     for (int coefficient = 0; coefficient < 13; ++coefficient)
         stream << '\t' << "mfcc_" << coefficient;
     stream << '\n';
-    const int count = std::min(frames.size(), vad.confidence.size());
+    const int count = std::min<int>(frames.size(), static_cast<int>(vad.confidence.size()));
+    FftProcessor fft(m_config.frameSize);
     for (int i = 0; i < count; ++i) {
         if (vad.confidence[i] < 0.5f) continue;
-        FftProcessor fft(m_config.frameSize);
-        const auto mfcc = fft.computeMFCC(frames[i], audio->info.sampleRate, 24, 13);
+        const auto mfcc = fft.computeMFCC(frames.frame(i), m_config.frameSize, audio->info.sampleRate, 24, 13);
         stream << i;
         for (float value : mfcc) stream << '\t' << value;
         stream << '\n';
@@ -333,25 +357,31 @@ void AudioEngine::setVadParam(const QString& key, float value) {
 void AudioEngine::runVad(const QString& filePath) {
     if (!m_storage.load(filePath)) return;
     m_cache.remove(filePath, DataType::Vad);
-    recomputeChartIntoCache(filePath, DataType::Vad);
-    recomputeRanges();
-    emitRangeSignals();
 
-    const auto chart = m_cache.get(filePath, DataType::Vad);
-    if (chart) {
-        ChartEvent chartEventValue;
-        chartEventValue.type = ChartEvent::AddChart;
-        chartEventValue.key = filePath;
-        chartEventValue.dataType = DataType::Vad;
-        chartEventValue.chart = prepareChartForUi(*chart);
-        emit chartEvent(chartEventValue);
-    }
-    if (m_vadDebug.contains(filePath)) {
-        ChartEvent debugEvent;
-        debugEvent.type = ChartEvent::UpdateVadDebug;
-        debugEvent.vadDebug = m_vadDebug.value(filePath);
-        emit chartEvent(debugEvent);
-    }
+    (void)QtConcurrent::run([this, filePath]() {
+        recomputeChartIntoCache(filePath, DataType::Vad);
+        QMetaObject::invokeMethod(this, [this, filePath]() {
+            recomputeRanges();
+            emitRangeSignals();
+
+            const auto chart = m_cache.get(filePath, DataType::Vad);
+            if (chart) {
+                ChartEvent chartEventValue;
+                chartEventValue.type = ChartEvent::AddChart;
+                chartEventValue.key = filePath;
+                chartEventValue.dataType = DataType::Vad;
+                chartEventValue.chart = prepareChartForUi(*chart);
+                emit chartEvent(chartEventValue);
+            }
+            std::lock_guard<std::mutex> lock(m_vadDebugMutex);
+            if (m_vadDebug.contains(filePath)) {
+                ChartEvent debugEvent;
+                debugEvent.type = ChartEvent::UpdateVadDebug;
+                debugEvent.vadDebug = m_vadDebug.value(filePath);
+                emit chartEvent(debugEvent);
+            }
+        }, Qt::QueuedConnection);
+    });
 }
 
 // ── Audio playback ───────────────────────────────────────────────────────────
@@ -531,20 +561,27 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
             debug.decision.append({float(i * result.frameSize)
                                        + 0.5f * float(result.analysisFrameSize),
                                    result.confidence[i]});
-        m_vadDebug[filePath] = std::move(debug);
+        {
+            std::lock_guard<std::mutex> lock(m_vadDebugMutex);
+            m_vadDebug[filePath] = std::move(debug);
+        }
         break;
     }
     case DataType::AvgAmplitude: {
-        auto frames = frameSignal(audio->samples, m_config.frameSize, false, false);
-        int hopSize = m_config.frameSize / 2;
-        QVector<ChartPoint> pts(frames.size());
-        float minY = 1e30f, maxY = -1e30f;
-        for (int i = 0; i < frames.size(); ++i) {
-            float v = frameAvgAmplitude(frames[i].constData(), m_config.frameSize);
-            pts[i] = {float(i * hopSize), v};
-            minY = std::min(minY, v); maxY = std::max(maxY, v);
+        const int frameSize = m_config.frameSize;
+        const int hopSize = frameSize / 2;
+        if (audio->samples.size() >= frameSize && frameSize > 0) {
+            const int nFrames = (audio->samples.size() - frameSize) / hopSize + 1;
+            QVector<ChartPoint> pts(nFrames);
+            float minY = 1e30f, maxY = -1e30f;
+            const float* src = audio->samples.constData();
+            for (int i = 0; i < nFrames; ++i) {
+                float v = frameAvgAmplitude(src + i * hopSize, frameSize);
+                pts[i] = {float(i * hopSize), v};
+                minY = std::min(minY, v); maxY = std::max(maxY, v);
+            }
+            chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;
         }
-        chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;
         break;
     }
     case DataType::SpectrumFFT: {
@@ -553,12 +590,13 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
         break;
     }
     case DataType::AutoCorrelation: {
-        auto frames = frameSignal(audio->samples, m_config.frameSize, false, true);
+        auto frames = frameSignalFast(audio->samples, m_config.frameSize, false, true);
         int hopSize = m_config.frameSize / 2;
         QVector<ChartPoint> pts;
+        pts.reserve(frames.size() * 14);
         float minY = 1e30f, maxY = -1e30f;
         for (int i = 0; i < frames.size(); ++i) {
-            auto acf = autoCorrelation(frames[i], 13);
+            auto acf = autoCorrelation(frames.frame(i), m_config.frameSize, 13);
             for (int j = 0; j < acf.size(); ++j) {
                 pts.append({float(i * hopSize + j), acf[j]});
                 minY = std::min(minY, acf[j]); maxY = std::max(maxY, acf[j]);

@@ -109,6 +109,19 @@ void MainWindow::wireSignals() {
     // Init with current width
     m_engine->setDownSamplePointsNum(
         std::max(200, m_chartWidget->plotWidth() * 2));
+
+    auto* lodTimer = new QTimer(this);
+    lodTimer->setSingleShot(true);
+    lodTimer->setInterval(150);
+    connect(m_chartWidget, &ChartWidget::xRangeChanged, this,
+            [this, lodTimer](double min, double max) {
+        lodTimer->stop();
+        lodTimer->disconnect();
+        connect(lodTimer, &QTimer::timeout, this, [this, min, max]() {
+            m_engine->setIndexRange(float(min), float(max));
+        });
+        lodTimer->start();
+    });
     connect(m_chartWidget, &ChartWidget::selectionRangeChanged, this,
             [this](double first, double last) {
         statusBar()->showMessage(QStringLiteral("已选择样本 %1 — %2（%3 个采样点）")

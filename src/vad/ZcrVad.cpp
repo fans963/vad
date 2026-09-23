@@ -4,9 +4,9 @@
 
 #include <algorithm>
 
-VadResult ZcrVad::process(const QVector<float>& samples, uint32_t /*sampleRate*/,
+VadResult ZcrVad::process(const QVector<float>& samples, uint32_t,
                            int frameSize) const {
-    int hopSize = frameSize / 2;
+    const int hopSize = frameSize / 2;
     VadResult result;
     result.frameSize = hopSize;
     result.analysisFrameSize = frameSize;
@@ -14,17 +14,18 @@ VadResult ZcrVad::process(const QVector<float>& samples, uint32_t /*sampleRate*/
     result.zcrLabel = QStringLiteral("过零率");
     result.highEnergyThreshold = energyFloor;
     result.zcrThreshold = zcrThreshold;
-    if (samples.size() < frameSize) return result;
+    if (samples.size() < frameSize || frameSize <= 0) return result;
 
-    auto frames = frameSignal(samples, frameSize, true, true);
+    auto frames = frameSignalFast(samples, frameSize, true, true);
     int nFrames = frames.size();
+    if (nFrames <= 0) return result;
+
     result.confidence.resize(nFrames);
     result.energy.resize(nFrames);
     result.zcr.resize(nFrames);
 
-    // Parallel ZCR per frame (each frame is independent)
     parallelFor(nFrames, [&](int i) {
-        const auto& frame = frames[i];
+        const float* frame = frames.frame(i);
         float energy = 0.0f;
         for (int j = 0; j < frameSize; ++j)
             energy += frame[j] * frame[j];
@@ -43,7 +44,7 @@ VadResult ZcrVad::process(const QVector<float>& samples, uint32_t /*sampleRate*/
         float zcrVal = float(crossings) / frameSize;
         result.zcr[i] = zcrVal;
         result.confidence[i] = 1.0f - std::min(zcrVal / zcrThreshold, 1.0f);
-    });
+    }, 256);
 
     return result;
 }

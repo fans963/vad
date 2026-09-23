@@ -9,24 +9,23 @@ float frameEnergy(const float* frame, int frameSize) {
 }
 
 CachedChart computeEnergy(const QVector<float>& samples, int frameSize) {
-    auto frames = frameSignal(samples, frameSize, false, false);
-    int hopSize = frameSize / 2;
-    int nFrames = frames.size();
-
-    if (nFrames == 0) {
-        CachedChart chart;
-        chart.dataType = DataType::Energy;
+    CachedChart chart;
+    chart.dataType = DataType::Energy;
+    if (samples.size() < frameSize || frameSize <= 0) {
         return chart;
     }
 
-    // Parallel energy computation using Qt thread pool
+    const int hopSize = frameSize / 2;
+    const int nFrames = (samples.size() - frameSize) / hopSize + 1;
+    if (nFrames <= 0) return chart;
+
     QVector<float> energies(nFrames);
+    const float* src = samples.constData();
 
     parallelFor(nFrames, [&](int i) {
-        energies[i] = frameEnergy(frames[i].constData(), frameSize);
-    });
+        energies[i] = frameEnergy(src + i * hopSize, frameSize);
+    }, 512);
 
-    // Build result points
     QVector<ChartPoint> points(nFrames);
     float minY = std::numeric_limits<float>::max();
     float maxY = std::numeric_limits<float>::lowest();
@@ -37,8 +36,6 @@ CachedChart computeEnergy(const QVector<float>& samples, int frameSize) {
         maxY = std::max(maxY, energies[i]);
     }
 
-    CachedChart chart;
-    chart.dataType = DataType::Energy;
     chart.points = std::move(points);
     chart.minY = minY;
     chart.maxY = maxY;

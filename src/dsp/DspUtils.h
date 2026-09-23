@@ -2,11 +2,37 @@
 
 #include <QVector>
 #include <cmath>
+#include <algorithm>
 
 // ── Window types ────────────────────────────────────────────────────────────
 enum class WindowType { Rectangular, Hamming, Hanning, Blackman };
 
-// ── Frame signal ────────────────────────────────────────────────────────────
+// ── Contiguous framed signal representation (Zero-fragmentation) ─────────────
+struct FramedSignal {
+    int numFrames = 0;
+    int frameSize = 0;
+    int hopSize = 0;
+    QVector<float> data; // Contiguous memory: numFrames * frameSize
+
+    inline bool isEmpty() const { return numFrames == 0; }
+    inline int size() const { return numFrames; }
+    inline const float* frame(int i) const { return data.constData() + i * frameSize; }
+    inline float* frame(int i) { return data.data() + i * frameSize; }
+
+    QVector<float> getFrameVector(int i) const {
+        QVector<float> v(frameSize);
+        std::copy_n(frame(i), frameSize, v.data());
+        return v;
+    }
+};
+
+FramedSignal frameSignalFast(const QVector<float>& samples,
+                             int frameSize,
+                             bool preEmphasis = false,
+                             bool hammingWindow = false,
+                             float preEmphasisAlpha = 0.95f);
+
+// ── Legacy frameSignal (backward compatibility) ─────────────────────────────
 QVector<QVector<float>> frameSignal(const QVector<float>& samples,
                                      int frameSize,
                                      bool preEmphasis = false,
@@ -51,9 +77,6 @@ inline float frameAvgAmplitude(const float* frame, int frameSize) {
 }
 
 // ── Short-time energy (linear scale) ────────────────────────────────────────
-// Samples are stored as normalized floats. Convert them back to the PCM16
-// amplitude range, then use the direct sum of squares used by the reference
-// implementation. No logarithmic/dB conversion is applied here.
 inline float frameEnergyLinear(const float* frame, int frameSize) {
     float sum = 0.0f;
     for (int i = 0; i < frameSize; ++i) {

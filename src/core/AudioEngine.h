@@ -10,6 +10,7 @@
 
 #include <QObject>
 #include <memory>
+#include <mutex>
 
 // ── Audio processor engine (central orchestrator) ───────────────────────────
 // Manages audio loading, decoding, chart computation, caching, VAD, and playback.
@@ -84,6 +85,7 @@ private:
     AudioPlayer m_player;
     VadEngine m_vad;
     QHash<QString, VadDebugData> m_vadDebug;
+    mutable std::mutex m_vadDebugMutex;
 
     // View state
     float m_indexRangeStart = 0.0f;

@@ -1,28 +1,29 @@
 #include "EnergyVad.h"
 #include "../dsp/DspUtils.h"
 
-VadResult EnergyVad::process(const QVector<float>& samples, uint32_t /*sampleRate*/,
+VadResult EnergyVad::process(const QVector<float>& samples, uint32_t,
                               int frameSize) const {
-    int hopSize = frameSize / 2;
+    const int hopSize = frameSize / 2;
     VadResult result;
     result.frameSize = hopSize;
     result.analysisFrameSize = frameSize;
     result.energyLabel = QStringLiteral("平均帧能量");
 
-    if (samples.size() < frameSize) return result;
+    if (samples.size() < frameSize || frameSize <= 0) return result;
+    const int nFrames = (samples.size() - frameSize) / hopSize + 1;
+    if (nFrames <= 0) return result;
 
-    auto frames = frameSignal(samples, frameSize, false, false);
-    int nFrames = frames.size();
     result.confidence.resize(nFrames);
     result.energy.resize(nFrames);
     result.highEnergyThreshold = threshold;
 
+    const float* src = samples.constData();
     int hangover = 0;
     for (int i = 0; i < nFrames; ++i) {
-        const auto& frame = frames[i];
+        const float* frameData = src + i * hopSize;
         float energy = 0.0f;
         for (int j = 0; j < frameSize; ++j)
-            energy += frame[j] * frame[j];
+            energy += frameData[j] * frameData[j];
         energy /= frameSize;
         result.energy[i] = energy;
 

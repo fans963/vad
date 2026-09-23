@@ -65,7 +65,7 @@ private:
     QCustomPlot* m_vadEnergyPlot = nullptr;
     QCustomPlot* m_vadZcrPlot = nullptr;
     QCustomPlot* m_vadDecisionPlot = nullptr;
-    QCPItemText* m_coordLabel = nullptr;
+    QLabel* m_coordOverlay = nullptr;
     QCPItemLine* m_playhead = nullptr;
     QCPItemLine* m_selectionStartLine = nullptr;
     QCPItemLine* m_selectionEndLine = nullptr;

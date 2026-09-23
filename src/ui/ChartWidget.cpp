@@ -35,13 +35,11 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
     m_plot->xAxis->grid()->setVisible(false);
     m_plot->yAxis->grid()->setVisible(false);
 
-    // Coordinate label
-    m_coordLabel = new QCPItemText(m_plot);
-    m_coordLabel->position->setType(QCPItemPosition::ptAxisRectRatio);
-    m_coordLabel->position->setCoords(0.02, 0.02);
-    m_coordLabel->setText(QString());
-    m_coordLabel->setPen(QPen(Qt::black));
-    m_coordLabel->setBrush(QBrush(QColor(255, 255, 255, 180)));
+    // Coordinate floating label (overlay widget - avoid replotting canvas on hover)
+    m_coordOverlay = new QLabel(m_plot);
+    m_coordOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_coordOverlay->move(12, 10);
+    m_coordOverlay->setText(QString());
 
     // Playhead line (like Flutter PlotBand)
     m_playhead = new QCPItemLine(m_plot);
@@ -76,13 +74,17 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
     connect(m_plot, &QCustomPlot::mouseMove, this, [this](QMouseEvent* e) {
         double x = m_plot->xAxis->pixelToCoord(e->pos().x());
         double y = m_plot->yAxis->pixelToCoord(e->pos().y());
-        m_coordLabel->setText(QStringLiteral("x:%1 y:%2").arg(x, 0, 'f', 0).arg(y, 0, 'f', 4));
-        m_plot->replot(QCustomPlot::rpQueuedReplot);
+        if (m_coordOverlay) {
+            m_coordOverlay->setText(QStringLiteral(" x:%1  y:%2 ").arg(x, 0, 'f', 0).arg(y, 0, 'f', 4));
+            m_coordOverlay->adjustSize();
+            m_coordOverlay->raise();
+        }
         if (m_selecting) {
             m_selectionEnd = std::max(0.0, x);
             m_selectionEndLine->start->setCoords(m_selectionEnd, 0);
             m_selectionEndLine->end->setCoords(m_selectionEnd, 1);
             m_selectionEndLine->setVisible(true);
+            m_plot->replot(QCustomPlot::rpQueuedReplot);
         }
     });
     connect(m_plot, &QCustomPlot::mousePress, this, [this](QMouseEvent* e) {
@@ -196,12 +198,13 @@ void ChartWidget::applyPlotPalette() {
     m_plot->legend->setTextColor(text);
     m_plot->legend->setSelectedTextColor(text);
 
-    if (m_coordLabel) {
-        QColor labelBackground = background;
-        labelBackground.setAlpha(dark ? 225 : 220);
-        m_coordLabel->setColor(text);
-        m_coordLabel->setPen(QPen(border));
-        m_coordLabel->setBrush(QBrush(labelBackground));
+    if (m_coordOverlay) {
+        QString bg = dark ? "rgba(35, 35, 35, 200)" : "rgba(255, 255, 255, 200)";
+        QString fg = dark ? "#eee" : "#222";
+        QString bd = dark ? "#555" : "#ccc";
+        m_coordOverlay->setStyleSheet(QStringLiteral(
+            "QLabel { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 3px; padding: 2px 5px; font-size: 11px; }").arg(bg, fg, bd));
     }
 
     if (m_playhead)
@@ -451,7 +454,7 @@ void ChartWidget::rebuildSeries() {
             pen.setWidthF(lineWidth);
             graph->setPen(pen);
             graph->setScatterStyle(QCPScatterStyle::ssNone);
-            graph->setData(xs, ys);
+            graph->setData(std::move(xs), std::move(ys), true);
             break;
         }
         case DataType::Vad: {
@@ -461,7 +464,7 @@ void ChartWidget::rebuildSeries() {
             borderPen.setWidthF(1.0);
             graph->setPen(borderPen);
             graph->setBrush(QColor(76, 175, 80, static_cast<int>(255 * 0.25)));
-            graph->setData(xs, ys);
+            graph->setData(std::move(xs), std::move(ys), true);
             break;
         }
         default: {
@@ -475,7 +478,7 @@ void ChartWidget::rebuildSeries() {
 
             // Don't use scatter points for performance with large datasets
             graph->setScatterStyle(QCPScatterStyle::ssNone);
-            graph->setData(xs, ys);
+            graph->setData(std::move(xs), std::move(ys), true);
             break;
         }
         }
@@ -523,7 +526,7 @@ void ChartWidget::renderVadDebug(const VadDebugData& debug) {
             x[i] = points[i].x;
             y[i] = points[i].y;
         }
-        graph->setData(x, y);
+        graph->setData(std::move(x), std::move(y), true);
     };
     const auto addThreshold = [](QCustomPlot* plot, double x1, double x2,
                                  double value, const QString& name,

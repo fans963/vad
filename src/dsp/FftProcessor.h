@@ -2,11 +2,7 @@
 
 #include <QVector>
 #include <memory>
-
-// Forward declarations for stdexec
-namespace exec {
-    class static_thread_pool;
-}
+#include <cmath>
 
 class FftProcessor {
 public:
@@ -15,6 +11,7 @@ public:
 
     // Compute magnitude spectrum (single frame)
     QVector<float> computeMagnitudeSpectrum(const QVector<float>& timeData);
+    QVector<float> computeMagnitudeSpectrum(const float* timeData, int size);
 
     // Spectrum of spectrum (FFT of magnitude spectrum)
     QVector<float> computeSpectrumOfSpectrum(const QVector<float>& magnitudes);
@@ -27,13 +24,18 @@ public:
 
     // Real cepstrum: IFFT(log(|FFT(x)|)).
     QVector<float> computeRealCepstrum(const QVector<float>& timeData);
+    QVector<float> computeRealCepstrum(const float* timeData, int size);
 
     // Mel-scale spectrum
     static QVector<float> computeMelSpectrum(const QVector<float>& magnitudes,
                                               int sampleRate, int numFilters = 24);
+    static QVector<float> computeMelSpectrum(const float* magnitudes, int size,
+                                              int sampleRate, int numFilters = 24);
 
     // MFCC
     QVector<float> computeMFCC(const QVector<float>& timeData,
+                                int sampleRate, int numFilters = 24, int numCoeffs = 12);
+    QVector<float> computeMFCC(const float* timeData, int size,
                                 int sampleRate, int numFilters = 24, int numCoeffs = 12);
 
     static float freqToMel(float freq) { return 2595.0f * std::log10(1.0f + freq / 700.0f); }

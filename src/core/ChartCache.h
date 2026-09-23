@@ -4,9 +4,9 @@
 #include <QHash>
 #include <QVector>
 #include <optional>
+#include <mutex>
 
-// ── In-memory cached chart storage ──────────────────────────────────────────
-// Each file path maps to multiple CachedChart entries (one per DataType).
+// ── Thread-safe in-memory cached chart storage ──────────────────────────────
 class ChartCache {
 public:
     void add(const QString& filePath, const CachedChart& chart);
@@ -17,9 +17,9 @@ public:
     void removeAll(const QString& filePath);
     void removeByDataType(DataType dt);
     void clear();
-    QStringList filePaths() const; // unique file paths
+    QStringList filePaths() const;
 
 private:
-    // filePath -> list of (DataType, CachedChart)
+    mutable std::mutex m_mutex;
     QHash<QString, QHash<DataType, CachedChart>> m_cache;
 };

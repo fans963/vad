@@ -1,5 +1,4 @@
 #include "ReferenceVad.h"
-
 #include "../dsp/DspUtils.h"
 
 #include <algorithm>
@@ -19,24 +18,30 @@ void ReferenceVad::setParameter(const QString& key, float value) {
 VadResult ReferenceVad::process(const QVector<float>& samples, uint32_t,
                                 int frameSize) const {
     VadResult result;
-    result.frameSize = frameSize / 2;
+    const int hopSize = frameSize / 2;
+    result.frameSize = hopSize;
     result.analysisFrameSize = frameSize;
     result.energyLabel = QStringLiteral("帧能量 (dB)");
     result.zcrLabel = QStringLiteral("过零率");
-    const auto frames = frameSignal(samples, frameSize, false, false);
-    if (frames.isEmpty()) return result;
 
-    QVector<float> energy(frames.size());
-    QVector<float> zcr(frames.size());
+    if (samples.size() < frameSize || frameSize <= 0) return result;
+    const int numFrames = (samples.size() - frameSize) / hopSize + 1;
+    if (numFrames <= 0) return result;
+
+    QVector<float> energy(numFrames);
+    QVector<float> zcr(numFrames);
     float maxEnergy = -120.0f;
     float maxZcr = 0.0f;
-    for (int i = 0; i < frames.size(); ++i) {
+    const float* src = samples.constData();
+
+    for (int i = 0; i < numFrames; ++i) {
+        const float* frameData = src + i * hopSize;
         double sum = 0.0;
         int crossings = 0;
         for (int j = 0; j < frameSize; ++j) {
-            const double sample = double(frames[i][j]) * 32768.0;
+            const double sample = double(frameData[j]) * 32768.0;
             sum += sample * sample;
-            if (j + 1 < frameSize && sgn(frames[i][j]) != sgn(frames[i][j + 1]))
+            if (j + 1 < frameSize && sgn(frameData[j]) != sgn(frameData[j + 1]))
                 ++crossings;
         }
         energy[i] = float(10.0 * std::log10(sum / frameSize + 1e-12));
@@ -45,7 +50,6 @@ VadResult ReferenceVad::process(const QVector<float>& samples, uint32_t,
         maxZcr = std::max(maxZcr, zcr[i]);
     }
 
-    // Preserve the semantic ordering even while the two UI sliders cross.
     const float lowOffset = std::min(lowEnergyOffsetDb, highEnergyOffsetDb);
     const float highOffset = std::max(lowEnergyOffsetDb, highEnergyOffsetDb);
     const float high = maxEnergy + highOffset;
@@ -80,7 +84,6 @@ VadResult ReferenceVad::process(const QVector<float>& samples, uint32_t,
             ++segment.second;
     }
 
-    // Merge overlaps introduced by threshold expansion.
     QVector<QPair<int, int>> merged;
     for (const auto& segment : segments) {
         if (!merged.isEmpty() && segment.first <= merged.last().second + 1)
@@ -89,7 +92,7 @@ VadResult ReferenceVad::process(const QVector<float>& samples, uint32_t,
             merged.append(segment);
     }
 
-    result.confidence.fill(0.0f, frames.size());
+    result.confidence.fill(0.0f, numFrames);
     for (const auto& segment : merged)
         for (int i = segment.first; i <= segment.second; ++i)
             result.confidence[i] = 1.0f;

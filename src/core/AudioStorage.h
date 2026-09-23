@@ -4,8 +4,9 @@
 #include <QHash>
 #include <QString>
 #include <optional>
+#include <mutex>
 
-// ── In-memory key-value audio storage ───────────────────────────────────────
+// ── Thread-safe in-memory key-value audio storage ───────────────────────────
 class AudioStorage {
 public:
     void save(const QString& filePath, AudioData audio);
@@ -15,5 +16,6 @@ public:
     QStringList allKeys() const;
 
 private:
+    mutable std::mutex m_mutex;
     QHash<QString, AudioData> m_store;
 };

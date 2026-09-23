@@ -15,14 +15,14 @@ PitchResult detectPitchACF(const QVector<float>& samples, int frameSize,
                             uint32_t sampleRate) {
     PitchResult r;
 
-    auto frames = frameSignal(samples, frameSize, true, true);
+    auto frames = frameSignalFast(samples, frameSize, true, true);
     int nFrames = frames.size();
     r.pitch.resize(nFrames);
     r.confidence.resize(nFrames);
 
     parallelFor(nFrames, [&](int f) {
-        const auto& frame = frames[f];
-        int N = frame.size();
+        const float* frame = frames.frame(f);
+        int N = frameSize;
         int maxLag = N / 2;
 
         // Compute ACF
@@ -36,7 +36,8 @@ PitchResult detectPitchACF(const QVector<float>& samples, int frameSize,
 
         // Center clipping for better pitch detection
         float peakAmplitude = 0.0f;
-        for (float sample : frame) peakAmplitude = std::max(peakAmplitude, std::fabs(sample));
+        for (int n = 0; n < N; ++n)
+            peakAmplitude = std::max(peakAmplitude, std::fabs(frame[n]));
         float clip = 0.70f * peakAmplitude;
         QVector<float> clipped(N, 0.0f);
         for (int n = 0; n < N; ++n)
@@ -81,7 +82,7 @@ PitchResult detectPitchACF(const QVector<float>& samples, int frameSize,
             r.pitch[f] = 0.0f;
             r.confidence[f] = 0.0f;
         }
-    });
+    }, 64);
 
     return r;
 }
@@ -91,14 +92,14 @@ PitchResult detectPitchAMDF(const QVector<float>& samples, int frameSize,
                              uint32_t sampleRate) {
     PitchResult r;
 
-    auto frames = frameSignal(samples, frameSize, false, true);
+    auto frames = frameSignalFast(samples, frameSize, false, true);
     int nFrames = frames.size();
     r.pitch.resize(nFrames);
     r.confidence.resize(nFrames);
 
     parallelFor(nFrames, [&](int f) {
-        const auto& frame = frames[f];
-        int N = frame.size();
+        const float* frame = frames.frame(f);
+        int N = frameSize;
         int maxLag = N / 2;
 
         QVector<float> amdf(maxLag + 1, 0.0f);
@@ -134,7 +135,7 @@ PitchResult detectPitchAMDF(const QVector<float>& samples, int frameSize,
             r.pitch[f] = 0.0f;
             r.confidence[f] = 0.0f;
         }
-    });
+    }, 64);
 
     return r;
 }
@@ -143,14 +144,15 @@ PitchResult detectPitchAMDF(const QVector<float>& samples, int frameSize,
 PitchResult detectPitchCepstral(const QVector<float>& samples, int frameSize,
                                  uint32_t sampleRate) {
     PitchResult r;
-    auto frames = frameSignal(samples, frameSize, false, true);
+    auto frames = frameSignalFast(samples, frameSize, false, true);
     int nFrames = frames.size();
     r.pitch.resize(nFrames);
     r.confidence.resize(nFrames);
 
+    FftProcessor fftCep(frameSize);
+
     for (int f = 0; f < nFrames; ++f) {
-        FftProcessor fftCep(frameSize);
-        auto cep = fftCep.computeRealCepstrum(frames[f]);
+        auto cep = fftCep.computeRealCepstrum(frames.frame(f), frameSize);
 
         int maxLag = cep.size() - 1;
         int minIdx = sampleRate / 500;

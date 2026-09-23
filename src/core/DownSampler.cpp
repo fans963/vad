@@ -27,6 +27,7 @@ CachedChart minMaxDownsample(const CachedChart& chart, int targetPoints) {
 
     // Compute min/max per bucket in parallel
     parallelFor(buckets, [&](int b) {
+
         int bStart = b * bucketSize;
         int bEnd = std::min(bStart + bucketSize, n);
         if (bStart >= bEnd) return;
@@ -38,7 +39,7 @@ CachedChart minMaxDownsample(const CachedChart& chart, int targetPoints) {
         }
         minIdx[b] = locMin;
         maxIdx[b] = locMax;
-    });
+    }, 128);
 
     float minY = std::numeric_limits<float>::max();
     float maxY = std::numeric_limits<float>::lowest();
