@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QVector>
 #include <cstdint>
+#include <limits>
 
 // ── Chart point ─────────────────────────────────────────────────────────────
 struct ChartPoint {
@@ -35,6 +36,24 @@ enum class DataType {
     PitchCep,           // 倒谱法基音周期
     CepstralVad,        // 倒谱端点检测 VAD
     Spectrogram,        // 语谱图
+};
+
+// Data shown by the dedicated VAD tuning view.  These values come from the
+// detector itself (rather than from the generic Energy/ZCR analysis curves),
+// so thresholds and features always use identical preprocessing and units.
+struct VadDebugData {
+    QString filePath;
+    QString algorithm;
+    QString energyLabel = QStringLiteral("VAD Energy");
+    QString zcrLabel = QStringLiteral("VAD ZCR");
+    QVector<ChartPoint> energy;
+    QVector<ChartPoint> zcr;
+    QVector<ChartPoint> decision;
+    float lowEnergyThreshold = std::numeric_limits<float>::quiet_NaN();
+    float highEnergyThreshold = std::numeric_limits<float>::quiet_NaN();
+    float zcrThreshold = std::numeric_limits<float>::quiet_NaN();
+    int frameSize = 0;
+    int hopSize = 0;
 };
 
 inline QString dataTypeName(DataType dt) {
@@ -164,7 +183,16 @@ struct VadParamDef {
 // ── VAD result ──────────────────────────────────────────────────────────────
 struct VadResult {
     QVector<float> confidence;
+    // Kept for source compatibility with older callers; it is the frame hop.
     uint32_t frameSize = 0;
+    uint32_t analysisFrameSize = 0;
+    QVector<float> energy;
+    QVector<float> zcr;
+    QString energyLabel;
+    QString zcrLabel;
+    float lowEnergyThreshold = std::numeric_limits<float>::quiet_NaN();
+    float highEnergyThreshold = std::numeric_limits<float>::quiet_NaN();
+    float zcrThreshold = std::numeric_limits<float>::quiet_NaN();
 };
 
 // ── Playback state ──────────────────────────────────────────────────────────
@@ -177,7 +205,8 @@ struct PlaybackState {
 // ── Chart event ─────────────────────────────────────────────────────────────
 struct ChartEvent {
     enum Type { AddChart, UpdateAllCharts, RemoveChart, RemoveAllCharts,
-                UpdateMaxIndex, UpdateYRange, UpdatePlaybackState };
+                UpdateMaxIndex, UpdateYRange, UpdatePlaybackState,
+                UpdateVadDebug };
     Type type{UpdateAllCharts};
     QString key;
     DataType dataType{DataType::Audio};
@@ -187,6 +216,7 @@ struct ChartEvent {
     float minY = 0.0f, maxY = 0.0f;
     PlaybackState playbackState;
     float chartPosition = 0.0f;
+    VadDebugData vadDebug;
 };
 
 // ── Series key helpers ──────────────────────────────────────────────────────

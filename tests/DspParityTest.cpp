@@ -72,6 +72,23 @@ int main(int argc, char** argv) {
     ok &= check(std::any_of(vad.confidence.begin(), vad.confidence.end(),
                             [](float value) { return value > 0.5f; }),
                 "reference VAD must find the synthetic voiced segment");
+    ok &= check(vad.analysisFrameSize == frameSize &&
+                vad.frameSize == frameSize / 2,
+                "VAD must expose the analysis frame size and hop separately");
+    ok &= check(vad.energy.size() == vad.confidence.size() &&
+                vad.zcr.size() == vad.confidence.size(),
+                "VAD diagnostics must align one-to-one with decisions");
+    ok &= check(std::isfinite(vad.lowEnergyThreshold) &&
+                std::isfinite(vad.highEnergyThreshold) &&
+                vad.lowEnergyThreshold <= vad.highEnergyThreshold,
+                "VAD must expose ordered real energy thresholds");
+
+    ReferenceVad crossedThresholds;
+    crossedThresholds.lowEnergyOffsetDb = -5.0f;
+    crossedThresholds.highEnergyOffsetDb = -20.0f;
+    const auto crossedVad = crossedThresholds.process(signal, sampleRate, frameSize);
+    ok &= check(crossedVad.lowEnergyThreshold <= crossedVad.highEnergyThreshold,
+                "crossed threshold controls must retain low/high semantics");
 
     const auto pitch = detectPitchACF(signal, frameSize, sampleRate);
     int voicedFrames = 0;

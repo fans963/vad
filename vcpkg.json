@@ -3,7 +3,7 @@
   "name": "mywave-qt",
   "version": "1.0.0",
   "dependencies": [
-    "libsndfile",
+    "miniaudio",
     {
       "name": "fftw3",
       "features": ["avx2"]

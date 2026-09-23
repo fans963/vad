@@ -4,8 +4,8 @@
 #include <QString>
 #include <QByteArray>
 
-// ── Multi-format audio decoder using libsndfile ─────────────────────────────
-// Supports WAV, FLAC, OGG, MP3 (with mpeg), etc.
+// ── Multi-format audio decoder using miniaudio ──────────────────────────────
+// Supports WAV, FLAC, OGG, MP3, etc.
 class AudioDecoder {
 public:
     AudioData decode(const QString& filePath, const QByteArray& rawData,

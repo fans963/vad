@@ -28,6 +28,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setAcceptDrops(true);
 
     m_engine = new AudioEngine(this);
+    m_vadRefreshTimer = new QTimer(this);
+    m_vadRefreshTimer->setSingleShot(true);
+    m_vadRefreshTimer->setInterval(120);
     setupUi();
     setupMenus();
     wireSignals();
@@ -75,6 +78,10 @@ void MainWindow::wireSignals() {
             this, &MainWindow::onVadParamChanged);
     connect(m_controlPanel, &ControlPanel::vadRunRequested,
             this, &MainWindow::onRunVad);
+    connect(m_vadRefreshTimer, &QTimer::timeout, this, [this]() {
+        if (!m_pendingVadFile.isEmpty())
+            m_engine->runVad(m_pendingVadFile);
+    });
 
     // ── Series management → Engine ──────────────────────────────────────
     connect(m_controlPanel, &ControlPanel::deleteSeriesRequested,
@@ -469,6 +476,8 @@ void MainWindow::onChartEvent(const ChartEvent& event) {
     case ChartEvent::UpdatePlaybackState:
         m_controlPanel->setPlaybackState(event.playbackState, event.chartPosition);
         break;
+    case ChartEvent::UpdateVadDebug:
+        break;
     }
 }
 
@@ -497,21 +506,30 @@ void MainWindow::onStopAudio() { m_engine->stopAudio(); }
 void MainWindow::onVadAlgorithmChanged(const QString& name) {
     m_engine->setVadAlgorithm(name);
     m_controlPanel->setVadParams(m_engine->vadParams());
+    m_pendingVadFile = currentFilePath();
+    if (!m_pendingVadFile.isEmpty())
+        m_vadRefreshTimer->start();
 }
 
 void MainWindow::onVadParamChanged(const QString& key, float value) {
     m_engine->setVadParam(key, value);
+    m_pendingVadFile = currentFilePath();
+    if (!m_pendingVadFile.isEmpty())
+        m_vadRefreshTimer->start();
 }
 
 void MainWindow::onRunVad(const QString& filePath) {
-    qDebug() << "[MAIN] onRunVad:" << filePath;
-    m_engine->removeChart(filePath, DataType::Vad);
-    m_engine->addChart(filePath, DataType::Vad);
+    const QString target = currentFilePath().isEmpty() ? filePath : currentFilePath();
+    qDebug() << "[MAIN] onRunVad:" << target;
+    if (!target.isEmpty()) {
+        m_vadRefreshTimer->stop();
+        m_pendingVadFile = target;
+        m_engine->runVad(target);
+    }
 }
 
 void MainWindow::onVadRunForCurrentFile() {
     for (const auto& fp : m_engine->loadedFiles()) {
-        m_engine->removeChart(fp, DataType::Vad);
-        m_engine->addChart(fp, DataType::Vad);
+        m_engine->runVad(fp);
     }
 }

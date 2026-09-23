@@ -1,77 +1,95 @@
 #include "AudioDecoder.h"
 
-#include <sndfile.h>
-#include <QTemporaryFile>
-#include <QDir>
+#include <miniaudio.h>
 #include <QFileInfo>
 #include <QDebug>
 
-AudioData AudioDecoder::decode(const QString& /*filePath*/,
-                                const QByteArray& rawData,
-                                const QString& format)
+static AudioData processDecodedFrames(const QString& filePath,
+                                      const QString& formatHint,
+                                      ma_uint32 channels,
+                                      ma_uint32 sampleRate,
+                                      ma_uint64 totalFrames,
+                                      const float* pFrames)
 {
-    QTemporaryFile tf(QDir::tempPath() + QStringLiteral("/vad_XXXXXX.%1").arg(format));
-    tf.setAutoRemove(true);
-    if (!tf.open()) { qWarning() << "[Decoder] temp file failed"; return {}; }
-    tf.write(rawData);
-    tf.flush();
-    tf.seek(0);
-    return decodeFile(tf.fileName());
+    AudioData result;
+    if (!pFrames || totalFrames == 0 || sampleRate == 0 || channels == 0) {
+        return result;
+    }
+
+    const auto frameCount = static_cast<qsizetype>(totalFrames);
+    result.samples.resize(frameCount);
+    if (channels >= 1) result.leftSamples.resize(frameCount);
+    if (channels >= 2) result.rightSamples.resize(frameCount);
+
+    for (qsizetype i = 0; i < frameCount; ++i) {
+        float sum = 0.0f;
+        for (ma_uint32 ch = 0; ch < channels; ++ch) {
+            sum += pFrames[i * channels + ch];
+        }
+        result.samples[i] = sum / static_cast<float>(channels);
+        result.leftSamples[i] = pFrames[i * channels];
+        if (channels >= 2) {
+            result.rightSamples[i] = pFrames[i * channels + 1];
+        }
+    }
+
+    result.info.filePath = filePath;
+    QString fmt = formatHint;
+    if (fmt.isEmpty() && !filePath.isEmpty()) {
+        fmt = QFileInfo(filePath).suffix().toLower();
+    }
+    result.info.format = fmt;
+    result.info.sampleRate = static_cast<int>(sampleRate);
+    result.info.channels = static_cast<int>(channels);
+    result.info.sampleCount = result.samples.size();
+    if (sampleRate > 0) {
+        result.info.durationSecs = static_cast<float>(result.samples.size()) / static_cast<float>(sampleRate);
+    }
+
+    qDebug() << "[Decoder] miniaudio done:" << result.samples.size() << "samples,"
+             << result.info.sampleRate << "Hz," << channels << "ch";
+    return result;
+}
+
+AudioData AudioDecoder::decode(const QString& filePath,
+                               const QByteArray& rawData,
+                               const QString& format)
+{
+    if (rawData.isEmpty()) {
+        if (!filePath.isEmpty()) {
+            return decodeFile(filePath);
+        }
+        return {};
+    }
+
+    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
+    ma_uint64 totalFrames = 0;
+    float* pFrames = nullptr;
+    ma_result res = ma_decode_memory(rawData.constData(), rawData.size(), &config, &totalFrames, reinterpret_cast<void**>(&pFrames));
+    if (res != MA_SUCCESS || !pFrames) {
+        qWarning() << "[Decoder] ma_decode_memory failed with code:" << res;
+        return {};
+    }
+
+    AudioData result = processDecodedFrames(filePath, format, config.channels, config.sampleRate, totalFrames, pFrames);
+    ma_free(pFrames, nullptr);
+    return result;
 }
 
 AudioData AudioDecoder::decodeFile(const QString& filePath)
 {
-    AudioData result;
-    qDebug() << "[Decoder] libsndfile:" << filePath;
+    qDebug() << "[Decoder] miniaudio decodeFile:" << filePath;
 
-    SF_INFO sfinfo{};
-    SNDFILE* sf = sf_open(filePath.toUtf8().constData(), SFM_READ, &sfinfo);
-    if (!sf) {
-        qWarning() << "[Decoder] sf_open failed:" << sf_strerror(nullptr);
-        return result;
+    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
+    ma_uint64 totalFrames = 0;
+    float* pFrames = nullptr;
+    ma_result res = ma_decode_file(filePath.toUtf8().constData(), &config, &totalFrames, reinterpret_cast<void**>(&pFrames));
+    if (res != MA_SUCCESS || !pFrames) {
+        qWarning() << "[Decoder] ma_decode_file failed for:" << filePath << "with code:" << res;
+        return {};
     }
 
-    qDebug() << "[Decoder] frames:" << sfinfo.frames
-             << "samplerate:" << sfinfo.samplerate
-             << "channels:" << sfinfo.channels
-             << "format:" << sfinfo.format;
-
-    // Read all frames as float
-    int channels = sfinfo.channels;
-    sf_count_t totalFrames = sfinfo.frames;
-    QVector<float> interleaved(totalFrames * channels);
-    sf_count_t read = sf_readf_float(sf, interleaved.data(), totalFrames);
-    sf_close(sf);
-
-    if (read <= 0) {
-        qWarning() << "[Decoder] sf_readf_float read 0 frames";
-        return result;
-    }
-
-    // Keep the original stereo channels (the reference program draws them
-    // separately) and also retain a mono mix for all analysis algorithms.
-    result.samples.resize(read);
-    if (channels >= 1) result.leftSamples.resize(read);
-    if (channels >= 2) result.rightSamples.resize(read);
-    for (sf_count_t i = 0; i < read; ++i) {
-        float sum = 0.0f;
-        for (int ch = 0; ch < channels; ++ch)
-            sum += interleaved[i * channels + ch];
-        result.samples[i] = sum / (float)channels;
-        result.leftSamples[i] = interleaved[i * channels];
-        if (channels >= 2)
-            result.rightSamples[i] = interleaved[i * channels + 1];
-    }
-
-    result.info.filePath = filePath;
-    result.info.format = QFileInfo(filePath).suffix().toLower();
-    result.info.sampleRate = sfinfo.samplerate;
-    result.info.channels = channels;
-    result.info.sampleCount = result.samples.size();
-    if (sfinfo.samplerate > 0)
-        result.info.durationSecs = (float)result.samples.size() / sfinfo.samplerate;
-
-    qDebug() << "[Decoder] done:" << result.samples.size() << "samples,"
-             << result.info.sampleRate << "Hz," << channels << "ch";
+    AudioData result = processDecodedFrames(filePath, QString(), config.channels, config.sampleRate, totalFrames, pFrames);
+    ma_free(pFrames, nullptr);
     return result;
 }

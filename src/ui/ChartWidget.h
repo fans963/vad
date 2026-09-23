@@ -53,12 +53,18 @@ public:
 
 private:
     void applyPlotPalette();
+    void renderVadDebug(const VadDebugData& debug);
+    void clearVadRegions();
     void updateFrameGridStyle();
     void applyGlobalYRange();
     QColor seriesColor(const QString& filePath, DataType dt) const;
     bool isVisibleByKey(const QString& key) const;
 
     QCustomPlot* m_plot = nullptr;
+    QLabel* m_vadDebugHeader = nullptr;
+    QCustomPlot* m_vadEnergyPlot = nullptr;
+    QCustomPlot* m_vadZcrPlot = nullptr;
+    QCustomPlot* m_vadDecisionPlot = nullptr;
     QCPItemText* m_coordLabel = nullptr;
     QCPItemLine* m_playhead = nullptr;
     QCPItemLine* m_selectionStartLine = nullptr;
@@ -68,6 +74,8 @@ private:
     bool m_selecting = false;
     int m_lastWidth = 0;
     int m_frameGridSize = 0;
+    VadDebugData m_vadDebug;
+    QVector<QCPItemRect*> m_vadRegions;
 
     // Chart data: key ("/path|datatype") -> CachedChart
     QHash<QString, CachedChart> m_data;

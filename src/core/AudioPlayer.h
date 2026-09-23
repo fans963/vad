@@ -2,15 +2,15 @@
 
 #include <QObject>
 #include <QTimer>
-#include <QAudioSink>
-#include <QAudioFormat>
-#include <QBuffer>
 #include <memory>
 #include <limits>
+#include <atomic>
 
 #include "Types.h"
 
-// ── Audio player using Qt6 QAudioSink ───────────────────────────────────────
+struct AudioPlayerDevice;
+
+// ── Multi-platform audio player using miniaudio ─────────────────────────────
 class AudioPlayer : public QObject {
     Q_OBJECT
 public:
@@ -37,18 +37,21 @@ signals:
 
 private slots:
     void onTick();
-    void onStateChanged(QAudio::State state);
 
 private:
     void emitState();
+    void initDevice();
+    void uninitDevice();
+    static void miniaudioDataCallback(void* pDevice, void* pOutput, const void* pInput, unsigned int frameCount);
 
     AudioData m_audio;
-    QAudioFormat m_format;
-    std::unique_ptr<QAudioSink> m_sink;
-    std::unique_ptr<QBuffer> m_buffer;
+    std::unique_ptr<AudioPlayerDevice> m_device;
     QTimer* m_timer = nullptr;
-    bool m_playing = false;
+
+    std::atomic<bool> m_playing{false};
+    std::atomic<bool> m_finished{false};
+    std::atomic<double> m_currentSample{0.0};
+    std::atomic<uint64_t> m_endSample{0};
+    std::atomic<float> m_speed{1.0f};
     uint64_t m_startSample = 0;
-    uint64_t m_endSample = 0;
-    float m_speed = 1.0f;
 };

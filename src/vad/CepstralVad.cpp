@@ -7,6 +7,7 @@ VadResult CepstralVad::process(const QVector<float>& samples, uint32_t /*sr*/,
     int hopSize = frameSize / 2;
     VadResult result;
     result.frameSize = hopSize;
+    result.analysisFrameSize = frameSize;
     if (samples.size() < frameSize) return result;
 
     auto frames = frameSignal(samples, frameSize, true, true, 0.95f);

@@ -3,7 +3,11 @@
 #include <QMouseEvent>
 #include <QMenu>
 #include <QPalette>
+#include <QLabel>
+#include <QSignalBlocker>
 #include <algorithm>
+#include <cmath>
+#include <utility>
 
 namespace {
 
@@ -46,7 +50,7 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
     m_playhead->setPen(QPen(Qt::red, 1.5));
     m_playhead->setVisible(false);
 
-    auto setupMarker = [this](QCPItemLine*& line) {
+    const auto setupMarker = [this](QCPItemLine*& line) {
         line = new QCPItemLine(m_plot);
         line->start->setTypeY(QCPItemPosition::ptAxisRectRatio);
         line->end->setTypeY(QCPItemPosition::ptAxisRectRatio);
@@ -102,7 +106,52 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
         m_plot->replot(QCustomPlot::rpQueuedReplot);
     });
 
-    layout->addWidget(m_plot);
+    layout->addWidget(m_plot, 4);
+
+    m_vadDebugHeader = new QLabel(this);
+    m_vadDebugHeader->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_vadDebugHeader->setContentsMargins(8, 2, 8, 2);
+    m_vadDebugHeader->setVisible(false);
+    layout->addWidget(m_vadDebugHeader);
+
+    const auto makeDebugPlot = [this, layout](const QString& yLabel, int height) {
+        auto* plot = new QCustomPlot(this);
+        plot->setMinimumHeight(height);
+        plot->setMaximumHeight(height);
+        plot->xAxis->setLabel(QStringLiteral("样本索引"));
+        plot->yAxis->setLabel(yLabel);
+        plot->legend->setVisible(true);
+        plot->legend->setFont(QFont(plot->font().family(), 8));
+        plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+        plot->axisRect()->setRangeDrag(Qt::Horizontal);
+        plot->axisRect()->setRangeZoom(Qt::Horizontal);
+        plot->setVisible(false);
+        layout->addWidget(plot);
+        return plot;
+    };
+    m_vadEnergyPlot = makeDebugPlot(QStringLiteral("能量"), 145);
+    m_vadZcrPlot = makeDebugPlot(QStringLiteral("ZCR"), 125);
+    m_vadDecisionPlot = makeDebugPlot(QStringLiteral("VAD"), 95);
+
+    const auto syncRange = [this](const QCPRange& range) {
+        for (auto* plot : {m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+            if (plot && plot->xAxis->range() != range) {
+                const QSignalBlocker blocker(plot->xAxis);
+                plot->xAxis->setRange(range);
+                plot->replot(QCustomPlot::rpQueuedReplot);
+            }
+        }
+    };
+    connect(m_plot->xAxis, QOverload<const QCPRange&>::of(&QCPAxis::rangeChanged),
+            this, syncRange);
+    for (auto* plot : {m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+        connect(plot->xAxis, QOverload<const QCPRange&>::of(&QCPAxis::rangeChanged),
+                this, [this, plot](const QCPRange& range) {
+            if (m_plot->xAxis->range() != range)
+                m_plot->xAxis->setRange(range);
+        });
+    }
+    applyPlotPalette();
 }
 
 void ChartWidget::changeEvent(QEvent* event) {
@@ -165,6 +214,27 @@ void ChartWidget::applyPlotPalette() {
     }
 
     updateFrameGridStyle();
+
+    for (auto* plot : {m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+        if (!plot) continue;
+        plot->setPalette(pal);
+        plot->setBackground(QBrush(background));
+        plot->axisRect()->setBackground(QBrush(background));
+        for (auto* axis : {plot->xAxis, plot->xAxis2,
+                           plot->yAxis, plot->yAxis2}) {
+            axis->setBasePen(QPen(axisColor, 1.0));
+            axis->setTickPen(QPen(axisColor, 1.0));
+            axis->setSubTickPen(QPen(subTickColor, 1.0));
+            axis->setTickLabelColor(text);
+            axis->setLabelColor(text);
+        }
+        plot->legend->setBrush(QBrush(legendBackground));
+        plot->legend->setBorderPen(QPen(border));
+        plot->legend->setTextColor(text);
+        plot->replot(QCustomPlot::rpQueuedReplot);
+    }
+    if (m_vadDebugHeader)
+        m_vadDebugHeader->setPalette(pal);
 }
 
 void ChartWidget::updateFrameGridStyle() {
@@ -238,6 +308,9 @@ void ChartWidget::handleChartEvent(const ChartEvent& event) {
     case ChartEvent::UpdatePlaybackState:
         setPlayheadPosition(event.chartPosition);
         break;
+    case ChartEvent::UpdateVadDebug:
+        renderVadDebug(event.vadDebug);
+        break;
     }
 }
 
@@ -288,9 +361,13 @@ void ChartWidget::rebuildSeries() {
     m_plot->clearPlottables();
     m_plot->yAxis2->setVisible(false);
     int lineSeriesCount = 0;
-    for (const auto& key : allSeriesKeys())
-        if (isVisibleByKey(key) && m_data[key].dataType != DataType::Spectrogram)
+    for (const auto& key : allSeriesKeys()) {
+        const bool dedicatedVad = m_data[key].dataType == DataType::Vad
+            && key == makeSeriesKey(m_vadDebug.filePath, DataType::Vad);
+        if (isVisibleByKey(key) && m_data[key].dataType != DataType::Spectrogram
+            && !dedicatedVad)
             ++lineSeriesCount;
+    }
     m_stackedSeries = lineSeriesCount > 1;
     m_stackedLaneCount = lineSeriesCount;
     int lane = 0;
@@ -301,6 +378,12 @@ void ChartWidget::rebuildSeries() {
         const auto& chart = m_data[key];
         const auto& meta = m_meta[key];
         auto [filePath, dt] = parseSeriesKey(key);
+
+        // The current detector result has a dedicated, correctly scaled VAD
+        // track below the main plot.  Avoid drawing the same 0/1 signal as a
+        // normalized lane in the main chart.
+        if (dt == DataType::Vad && filePath == m_vadDebug.filePath)
+            continue;
 
         if (dt == DataType::Spectrogram && chart.heatColumns > 0 && chart.heatRows > 0) {
             auto* map = new QCPColorMap(m_plot->xAxis, m_plot->yAxis2);
@@ -406,6 +489,159 @@ void ChartWidget::rebuildSeries() {
 
     applyGlobalYRange();
     m_plot->replot();
+}
+
+void ChartWidget::clearVadRegions() {
+    for (auto* region : std::as_const(m_vadRegions))
+        m_plot->removeItem(region);
+    m_vadRegions.clear();
+}
+
+void ChartWidget::renderVadDebug(const VadDebugData& debug) {
+    m_vadDebug = debug;
+    clearVadRegions();
+    rebuildSeries();
+
+    const bool available = !debug.filePath.isEmpty() && !debug.decision.isEmpty();
+    m_vadDebugHeader->setVisible(available);
+    if (!available) {
+        for (auto* plot : {m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+            plot->clearGraphs();
+            plot->setVisible(false);
+        }
+        m_plot->replot(QCustomPlot::rpQueuedReplot);
+        return;
+    }
+
+    const auto addTrace = [](QCustomPlot* plot, const QVector<ChartPoint>& points,
+                             const QString& name, const QColor& color) {
+        auto* graph = plot->addGraph();
+        graph->setName(name);
+        graph->setPen(QPen(color, 1.4));
+        QVector<double> x(points.size()), y(points.size());
+        for (int i = 0; i < points.size(); ++i) {
+            x[i] = points[i].x;
+            y[i] = points[i].y;
+        }
+        graph->setData(x, y);
+    };
+    const auto addThreshold = [](QCustomPlot* plot, double x1, double x2,
+                                 double value, const QString& name,
+                                 const QColor& color) {
+        if (!std::isfinite(value)) return;
+        auto* graph = plot->addGraph();
+        graph->setName(QStringLiteral("%1 = %2").arg(name).arg(value, 0, 'f', 3));
+        graph->setPen(QPen(color, 1.3, Qt::DashLine));
+        graph->setData(QVector<double>{x1, x2}, QVector<double>{value, value});
+    };
+    const auto setRealRange = [](QCustomPlot* plot,
+                                 const QVector<ChartPoint>& points,
+                                 std::initializer_list<float> extras) {
+        double low = std::numeric_limits<double>::max();
+        double high = std::numeric_limits<double>::lowest();
+        for (const auto& point : points) {
+            low = std::min(low, double(point.y));
+            high = std::max(high, double(point.y));
+        }
+        for (float value : extras) {
+            if (!std::isfinite(value)) continue;
+            low = std::min(low, double(value));
+            high = std::max(high, double(value));
+        }
+        if (low > high) return;
+        const double padding = std::max(1e-6, (high - low) * 0.12);
+        plot->yAxis->setRange(low - padding, high + padding);
+    };
+
+    const double xStart = 0.0;
+    const double xEnd = debug.decision.last().x + 0.5 * debug.frameSize;
+    const bool hasEnergy = !debug.energy.isEmpty();
+    const bool hasZcr = !debug.zcr.isEmpty();
+
+    m_vadEnergyPlot->clearGraphs();
+    m_vadEnergyPlot->setVisible(hasEnergy);
+    if (hasEnergy) {
+        m_vadEnergyPlot->yAxis->setLabel(debug.energyLabel);
+        addTrace(m_vadEnergyPlot, debug.energy, debug.energyLabel, QColor(33, 150, 243));
+        addThreshold(m_vadEnergyPlot, xStart, xEnd, debug.highEnergyThreshold,
+                     QStringLiteral("高门限"), QColor(244, 67, 54));
+        addThreshold(m_vadEnergyPlot, xStart, xEnd, debug.lowEnergyThreshold,
+                     QStringLiteral("低门限"), QColor(255, 152, 0));
+        setRealRange(m_vadEnergyPlot, debug.energy,
+                     {debug.lowEnergyThreshold, debug.highEnergyThreshold});
+    }
+
+    m_vadZcrPlot->clearGraphs();
+    m_vadZcrPlot->setVisible(hasZcr);
+    if (hasZcr) {
+        m_vadZcrPlot->yAxis->setLabel(debug.zcrLabel);
+        addTrace(m_vadZcrPlot, debug.zcr, debug.zcrLabel, QColor(156, 39, 176));
+        addThreshold(m_vadZcrPlot, xStart, xEnd, debug.zcrThreshold,
+                     QStringLiteral("ZCR 门限"), QColor(244, 67, 54));
+        setRealRange(m_vadZcrPlot, debug.zcr, {debug.zcrThreshold});
+    }
+
+    m_vadDecisionPlot->clearGraphs();
+    m_vadDecisionPlot->setVisible(true);
+    auto* decision = m_vadDecisionPlot->addGraph();
+    decision->setName(QStringLiteral("最终语音区间"));
+    decision->setPen(QPen(QColor(46, 160, 67), 1.3));
+    decision->setBrush(QColor(76, 175, 80, 90));
+
+    QVector<double> dx{0.0}, dy{0.0};
+    int i = 0;
+    while (i < debug.decision.size()) {
+        if (debug.decision[i].y < 0.5f) {
+            ++i;
+            continue;
+        }
+        const int first = i;
+        while (i + 1 < debug.decision.size() && debug.decision[i + 1].y >= 0.5f)
+            ++i;
+        const int last = i;
+        const double begin = double(first * debug.hopSize);
+        const double end = double(last * debug.hopSize + debug.frameSize);
+        dx << begin << begin << end << end;
+        dy << 0.0 << 1.0 << 1.0 << 0.0;
+
+        auto* region = new QCPItemRect(m_plot);
+        region->topLeft->setTypeX(QCPItemPosition::ptPlotCoords);
+        region->topLeft->setTypeY(QCPItemPosition::ptAxisRectRatio);
+        region->bottomRight->setTypeX(QCPItemPosition::ptPlotCoords);
+        region->bottomRight->setTypeY(QCPItemPosition::ptAxisRectRatio);
+        region->topLeft->setAxes(m_plot->xAxis, m_plot->yAxis);
+        region->bottomRight->setAxes(m_plot->xAxis, m_plot->yAxis);
+        region->topLeft->setCoords(begin, 0.0);
+        region->bottomRight->setCoords(end, 1.0);
+        region->setPen(Qt::NoPen);
+        region->setBrush(QColor(76, 175, 80, 35));
+        region->setLayer(QStringLiteral("background"));
+        m_vadRegions.append(region);
+        ++i;
+    }
+    dx << xEnd;
+    dy << 0.0;
+    decision->setData(dx, dy, true);
+    m_vadDecisionPlot->yAxis->setRange(-0.08, 1.08);
+
+    QStringList values;
+    if (std::isfinite(debug.highEnergyThreshold))
+        values << QStringLiteral("高能量门限 %1").arg(debug.highEnergyThreshold, 0, 'f', 3);
+    if (std::isfinite(debug.lowEnergyThreshold))
+        values << QStringLiteral("低能量门限 %1").arg(debug.lowEnergyThreshold, 0, 'f', 3);
+    if (std::isfinite(debug.zcrThreshold))
+        values << QStringLiteral("ZCR 门限 %1").arg(debug.zcrThreshold, 0, 'f', 4);
+    m_vadDebugHeader->setText(
+        QStringLiteral("VAD 实时调试 · %1 · 帧长 %2 / 帧移 %3%4")
+            .arg(debug.algorithm).arg(debug.frameSize).arg(debug.hopSize)
+            .arg(values.isEmpty() ? QString() : QStringLiteral(" · ") + values.join(QStringLiteral(" · "))));
+
+    const QCPRange range = m_plot->xAxis->range();
+    for (auto* plot : {m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+        plot->xAxis->setRange(range);
+        plot->replot(QCustomPlot::rpQueuedReplot);
+    }
+    m_plot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 QColor ChartWidget::seriesColor(const QString& filePath, DataType dt) const {

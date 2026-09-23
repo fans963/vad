@@ -20,6 +20,9 @@ VadResult ReferenceVad::process(const QVector<float>& samples, uint32_t,
                                 int frameSize) const {
     VadResult result;
     result.frameSize = frameSize / 2;
+    result.analysisFrameSize = frameSize;
+    result.energyLabel = QStringLiteral("帧能量 (dB)");
+    result.zcrLabel = QStringLiteral("过零率");
     const auto frames = frameSignal(samples, frameSize, false, false);
     if (frames.isEmpty()) return result;
 
@@ -42,9 +45,17 @@ VadResult ReferenceVad::process(const QVector<float>& samples, uint32_t,
         maxZcr = std::max(maxZcr, zcr[i]);
     }
 
-    const float high = maxEnergy + highEnergyOffsetDb;
-    const float low = maxEnergy + lowEnergyOffsetDb;
+    // Preserve the semantic ordering even while the two UI sliders cross.
+    const float lowOffset = std::min(lowEnergyOffsetDb, highEnergyOffsetDb);
+    const float highOffset = std::max(lowEnergyOffsetDb, highEnergyOffsetDb);
+    const float high = maxEnergy + highOffset;
+    const float low = maxEnergy + lowOffset;
     const float zcrThreshold = maxZcr * zcrRatio;
+    result.energy = energy;
+    result.zcr = zcr;
+    result.highEnergyThreshold = high;
+    result.lowEnergyThreshold = low;
+    result.zcrThreshold = zcrThreshold;
 
     QVector<QPair<int, int>> segments;
     int begin = -1;

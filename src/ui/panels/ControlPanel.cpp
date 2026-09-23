@@ -6,6 +6,8 @@
 #include <QFrame>
 #include <QGroupBox>
 #include <QLabel>
+#include <QDoubleSpinBox>
+#include <QSignalBlocker>
 #include <QScrollArea>
 #include <QColorDialog>
 #include <QMessageBox>
@@ -485,25 +487,34 @@ void ControlPanel::setVadParams(const QVector<VadParamDef>& params) {
         slider->setMaximumWidth(360);
         row->addWidget(slider);
 
-        auto* valLabel = new QLabel;
-        valLabel->setFixedWidth(64);
-        valLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        if (p.kind == VadParamKind::Int)
-            valLabel->setText(QString::number((int)p.value));
-        else
-            valLabel->setText(QString::number(p.value, 'f', 3));
-        row->addWidget(valLabel);
+        auto* valueEdit = new QDoubleSpinBox;
+        valueEdit->setRange(p.min, p.max);
+        valueEdit->setSingleStep(p.step);
+        valueEdit->setDecimals(p.kind == VadParamKind::Int ? 0 : 3);
+        valueEdit->setValue(p.value);
+        valueEdit->setFixedWidth(88);
+        valueEdit->setKeyboardTracking(false);
+        row->addWidget(valueEdit);
 
         connect(slider, &QSlider::valueChanged, this,
-                [this, p, slider, valLabel](int v) {
+                [this, p, valueEdit](int v) {
             float val = p.kind == VadParamKind::Int
                 ? (float)v
                 : v * p.step;
-            if (p.kind == VadParamKind::Int)
-                valLabel->setText(QString::number((int)val));
-            else
-                valLabel->setText(QString::number(val, 'f', 3));
+            const QSignalBlocker blocker(valueEdit);
+            valueEdit->setValue(val);
             emit vadParamChanged(p.key, val);
+        });
+        connect(valueEdit, &QDoubleSpinBox::valueChanged, this,
+                [this, p, slider](double value) {
+            const int sliderValue = p.kind == VadParamKind::Int
+                ? qRound(value)
+                : qRound(value / p.step);
+            if (slider->value() == sliderValue) {
+                emit vadParamChanged(p.key, float(value));
+            } else {
+                slider->setValue(sliderValue);
+            }
         });
 
         row->addStretch(1);

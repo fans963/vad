@@ -18,11 +18,11 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Find Qt6 (via vcpkg)
-find_package(Qt6 COMPONENTS Core Gui Widgets PrintSupport Multimedia Concurrent OpenGLWidgets REQUIRED)
+find_package(Qt6 COMPONENTS Core Gui Widgets PrintSupport Concurrent OpenGLWidgets REQUIRED)
 
 # Find FFTW3 (via vcpkg)
 find_package(FFTW3 CONFIG REQUIRED)
-find_package(SndFile CONFIG REQUIRED)
+find_package(Threads REQUIRED)
 
 # ── Auto-discover source files (includes 3rdparty/qcustomplot.cpp) ──────────
 file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
@@ -68,12 +68,16 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Gui
     Qt6::Widgets
     Qt6::PrintSupport
-    Qt6::Multimedia
     Qt6::Concurrent
     Qt6::OpenGLWidgets
     FFTW3::fftw3
-    SndFile::sndfile
+    Threads::Threads
+    ${CMAKE_DL_LIBS}
 )
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE m)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)

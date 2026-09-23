@@ -53,6 +53,7 @@ public:
     Q_INVOKABLE void setVadAlgorithm(const QString& name);
     QVector<VadParamDef> vadParams() const;
     Q_INVOKABLE void setVadParam(const QString& key, float value);
+    Q_INVOKABLE void runVad(const QString& filePath);
 
     // ── Audio playback ─────────────────────────────────────────────────────
     Q_INVOKABLE void playAudio(const QString& filePath, double startFraction = 0.0);
@@ -82,6 +83,7 @@ private:
     ChartCache m_cache;
     AudioPlayer m_player;
     VadEngine m_vad;
+    QHash<QString, VadDebugData> m_vadDebug;
 
     // View state
     float m_indexRangeStart = 0.0f;

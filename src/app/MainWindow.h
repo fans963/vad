@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QStackedWidget>
 #include <QLabel>
+#include <QTimer>
 
 #include "../core/AudioEngine.h"
 #include "../ui/ChartWidget.h"
@@ -51,6 +52,8 @@ private:
     InfoPanel* m_infoPanel = nullptr;
     QStackedWidget* m_panelStack = nullptr;
     QComboBox* m_fileSelector = nullptr;
+    QTimer* m_vadRefreshTimer = nullptr;
+    QString m_pendingVadFile;
 
     // Audio info tracking
     QHash<QString, AudioInfo> m_audioInfoMap;

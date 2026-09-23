@@ -13,7 +13,7 @@
 #include <QDebug>
 #include <QFile>
 #include <QTextStream>
-#include <sndfile.h>
+#include <miniaudio.h>
 
 AudioEngine::AudioEngine(QObject* parent)
     : QObject(parent)
@@ -50,6 +50,12 @@ void AudioEngine::setConfig(const EngineConfig& config) {
     m_indexRangeStart = 0.0f;
     m_indexRangeEnd = m_maxIndex;
     syncToUi();
+    if (!m_vadDebug.isEmpty()) {
+        ChartEvent debugEvent;
+        debugEvent.type = ChartEvent::UpdateVadDebug;
+        debugEvent.vadDebug = m_vadDebug.constBegin().value();
+        emit chartEvent(debugEvent);
+    }
 }
 
 void AudioEngine::setDownSamplePointsNum(int n) {
@@ -136,10 +142,23 @@ void AudioEngine::addChart(const QString& filePath, DataType dataType) {
     ev.dataType = dataType;
     ev.chart = prepareChartForUi(*chart);
     emit chartEvent(ev);
+
+    if (dataType == DataType::Vad && m_vadDebug.contains(filePath)) {
+        ChartEvent debugEvent;
+        debugEvent.type = ChartEvent::UpdateVadDebug;
+        debugEvent.vadDebug = m_vadDebug.value(filePath);
+        emit chartEvent(debugEvent);
+    }
 }
 
 void AudioEngine::removeChart(const QString& filePath, DataType dataType) {
     m_cache.remove(filePath, dataType);
+    if (dataType == DataType::Vad) {
+        m_vadDebug.remove(filePath);
+        ChartEvent debugEvent;
+        debugEvent.type = ChartEvent::UpdateVadDebug;
+        emit chartEvent(debugEvent);
+    }
 
     ChartEvent ev;
     ev.type = ChartEvent::RemoveChart;
@@ -163,10 +182,16 @@ void AudioEngine::setChartVisibility(const QString& filePath, DataType dataType,
 void AudioEngine::removeAudio(const QString& filePath) {
     m_cache.removeAll(filePath);
     m_storage.remove(filePath);
+    const bool removedVadDebug = m_vadDebug.remove(filePath) > 0;
 
     ChartEvent ev;
     ev.type = ChartEvent::RemoveAllCharts;
     emit chartEvent(ev);
+    if (removedVadDebug) {
+        ChartEvent debugEvent;
+        debugEvent.type = ChartEvent::UpdateVadDebug;
+        emit chartEvent(debugEvent);
+    }
 }
 
 AudioInfo AudioEngine::getAudioInfo(const QString& filePath) const {
@@ -190,27 +215,37 @@ bool AudioEngine::saveWavSegment(const QString& filePath, const QString& outputP
     const bool stereo = audio->info.channels >= 2
         && audio->leftSamples.size() == audio->samples.size()
         && audio->rightSamples.size() == audio->samples.size();
-    SF_INFO info{};
-    info.samplerate = int(audio->info.sampleRate);
-    info.channels = stereo ? 2 : 1;
-    info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
-    SNDFILE* output = sf_open(outputPath.toUtf8().constData(), SFM_WRITE, &info);
-    if (!output) return false;
+    const ma_uint32 channels = stereo ? 2 : 1;
+
+    ma_encoder_config config = ma_encoder_config_init(
+        ma_encoding_format_wav,
+        ma_format_s16,
+        channels,
+        static_cast<ma_uint32>(audio->info.sampleRate)
+    );
+    ma_encoder encoder;
+    if (ma_encoder_init_file(outputPath.toUtf8().constData(), &config, &encoder) != MA_SUCCESS) {
+        return false;
+    }
 
     const qsizetype frames = qsizetype(lastSample - firstSample);
-    QVector<float> data(frames * info.channels);
+    QVector<float> floatData(frames * channels);
     for (qsizetype i = 0; i < frames; ++i) {
         const qsizetype source = qsizetype(firstSample) + i;
         if (stereo) {
-            data[i * 2] = audio->leftSamples[source];
-            data[i * 2 + 1] = audio->rightSamples[source];
+            floatData[i * 2]     = audio->leftSamples[source];
+            floatData[i * 2 + 1] = audio->rightSamples[source];
         } else {
-            data[i] = audio->samples[source];
+            floatData[i]         = audio->samples[source];
         }
     }
-    const bool ok = sf_writef_float(output, data.constData(), frames) == frames;
-    sf_close(output);
-    return ok;
+    QVector<ma_int16> s16Data(frames * channels);
+    ma_pcm_f32_to_s16(s16Data.data(), floatData.constData(), frames * channels, ma_dither_mode_none);
+
+    ma_uint64 framesWritten = 0;
+    const ma_result writeRes = ma_encoder_write_pcm_frames(&encoder, s16Data.constData(), frames, &framesWritten);
+    ma_encoder_uninit(&encoder);
+    return writeRes == MA_SUCCESS && framesWritten == static_cast<ma_uint64>(frames);
 }
 
 bool AudioEngine::concatenate(const QString& firstFile, const QString& secondFile,
@@ -220,16 +255,31 @@ bool AudioEngine::concatenate(const QString& firstFile, const QString& secondFil
     if (!first || !second || first->info.sampleRate != second->info.sampleRate)
         return false;
 
-    SF_INFO info{};
-    info.samplerate = int(first->info.sampleRate);
-    info.channels = 1;
-    info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
-    SNDFILE* output = sf_open(outputPath.toUtf8().constData(), SFM_WRITE, &info);
-    if (!output) return false;
-    const auto written1 = sf_writef_float(output, first->samples.constData(), first->samples.size());
-    const auto written2 = sf_writef_float(output, second->samples.constData(), second->samples.size());
-    sf_close(output);
-    return written1 == first->samples.size() && written2 == second->samples.size();
+    ma_encoder_config config = ma_encoder_config_init(
+        ma_encoding_format_wav,
+        ma_format_s16,
+        1,
+        static_cast<ma_uint32>(first->info.sampleRate)
+    );
+    ma_encoder encoder;
+    if (ma_encoder_init_file(outputPath.toUtf8().constData(), &config, &encoder) != MA_SUCCESS) {
+        return false;
+    }
+
+    QVector<ma_int16> s16First(first->samples.size());
+    ma_pcm_f32_to_s16(s16First.data(), first->samples.constData(), first->samples.size(), ma_dither_mode_none);
+    ma_uint64 written1 = 0;
+    const ma_result res1 = ma_encoder_write_pcm_frames(&encoder, s16First.constData(), first->samples.size(), &written1);
+
+    QVector<ma_int16> s16Second(second->samples.size());
+    ma_pcm_f32_to_s16(s16Second.data(), second->samples.constData(), second->samples.size(), ma_dither_mode_none);
+    ma_uint64 written2 = 0;
+    const ma_result res2 = ma_encoder_write_pcm_frames(&encoder, s16Second.constData(), second->samples.size(), &written2);
+
+    ma_encoder_uninit(&encoder);
+    return res1 == MA_SUCCESS && res2 == MA_SUCCESS
+        && written1 == static_cast<ma_uint64>(first->samples.size())
+        && written2 == static_cast<ma_uint64>(second->samples.size());
 }
 
 bool AudioEngine::exportEffectiveMfcc(const QString& filePath,
@@ -266,13 +316,42 @@ QString AudioEngine::currentVadName() const { return m_vad.currentName(); }
 void AudioEngine::setVadAlgorithm(const QString& name) {
     m_vad.setAlgorithm(name);
     m_cache.removeByDataType(DataType::Vad);
+    m_vadDebug.clear();
     syncToUi();
+
+    ChartEvent debugEvent;
+    debugEvent.type = ChartEvent::UpdateVadDebug;
+    emit chartEvent(debugEvent);
 }
 
 QVector<VadParamDef> AudioEngine::vadParams() const { return m_vad.parameters(); }
 
 void AudioEngine::setVadParam(const QString& key, float value) {
     m_vad.setParameter(key, value);
+}
+
+void AudioEngine::runVad(const QString& filePath) {
+    if (!m_storage.load(filePath)) return;
+    m_cache.remove(filePath, DataType::Vad);
+    recomputeChartIntoCache(filePath, DataType::Vad);
+    recomputeRanges();
+    emitRangeSignals();
+
+    const auto chart = m_cache.get(filePath, DataType::Vad);
+    if (chart) {
+        ChartEvent chartEventValue;
+        chartEventValue.type = ChartEvent::AddChart;
+        chartEventValue.key = filePath;
+        chartEventValue.dataType = DataType::Vad;
+        chartEventValue.chart = prepareChartForUi(*chart);
+        emit chartEvent(chartEventValue);
+    }
+    if (m_vadDebug.contains(filePath)) {
+        ChartEvent debugEvent;
+        debugEvent.type = ChartEvent::UpdateVadDebug;
+        debugEvent.vadDebug = m_vadDebug.value(filePath);
+        emit chartEvent(debugEvent);
+    }
 }
 
 // ── Audio playback ───────────────────────────────────────────────────────────
@@ -415,13 +494,44 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
         float maxY = std::numeric_limits<float>::lowest();
         for (int i = 0; i < result.confidence.size(); ++i) {
             float v = result.confidence[i];
-            pts[i] = {float(i * result.frameSize), v};
+            const float center = float(i * result.frameSize)
+                + 0.5f * float(result.analysisFrameSize);
+            pts[i] = {center, v};
             minY = std::min(minY, v);
             maxY = std::max(maxY, v);
         }
         chart.points = std::move(pts);
         chart.minY = minY;
         chart.maxY = maxY;
+
+        VadDebugData debug;
+        debug.filePath = filePath;
+        debug.algorithm = m_vad.currentName();
+        debug.energyLabel = result.energyLabel.isEmpty()
+            ? QStringLiteral("VAD Energy") : result.energyLabel;
+        debug.zcrLabel = result.zcrLabel.isEmpty()
+            ? QStringLiteral("VAD ZCR") : result.zcrLabel;
+        debug.frameSize = int(result.analysisFrameSize);
+        debug.hopSize = int(result.frameSize);
+        debug.lowEnergyThreshold = result.lowEnergyThreshold;
+        debug.highEnergyThreshold = result.highEnergyThreshold;
+        debug.zcrThreshold = result.zcrThreshold;
+        debug.energy.reserve(result.energy.size());
+        debug.zcr.reserve(result.zcr.size());
+        debug.decision.reserve(result.confidence.size());
+        for (int i = 0; i < result.energy.size(); ++i)
+            debug.energy.append({float(i * result.frameSize)
+                                     + 0.5f * float(result.analysisFrameSize),
+                                 result.energy[i]});
+        for (int i = 0; i < result.zcr.size(); ++i)
+            debug.zcr.append({float(i * result.frameSize)
+                                  + 0.5f * float(result.analysisFrameSize),
+                              result.zcr[i]});
+        for (int i = 0; i < result.confidence.size(); ++i)
+            debug.decision.append({float(i * result.frameSize)
+                                       + 0.5f * float(result.analysisFrameSize),
+                                   result.confidence[i]});
+        m_vadDebug[filePath] = std::move(debug);
         break;
     }
     case DataType::AvgAmplitude: {
@@ -494,7 +604,9 @@ void AudioEngine::recomputeChartIntoCache(const QString& filePath, DataType dt) 
         QVector<ChartPoint> pts(result.confidence.size());
         float minY = 1e30f, maxY = -1e30f;
         for (int i = 0; i < result.confidence.size(); ++i) {
-            pts[i] = {float(i * result.frameSize), result.confidence[i]};
+            pts[i] = {float(i * result.frameSize)
+                          + 0.5f * float(result.analysisFrameSize),
+                      result.confidence[i]};
             minY = std::min(minY, result.confidence[i]); maxY = std::max(maxY, result.confidence[i]);
         }
         chart.points = std::move(pts); chart.minY = minY; chart.maxY = maxY;

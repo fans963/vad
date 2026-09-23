@@ -1,145 +1,249 @@
 #include "AudioPlayer.h"
-#include <algorithm>
 
-AudioPlayer::AudioPlayer(QObject* parent) : QObject(parent) {
+#include <miniaudio.h>
+#include <algorithm>
+#include <cstring>
+#include <QDebug>
+
+struct AudioPlayerDevice {
+    ma_device device{};
+    bool initialized = false;
+};
+
+void AudioPlayer::miniaudioDataCallback(void* pDevicePtr, void* pOutput, const void* /*pInput*/, unsigned int frameCount) {
+    auto* pDevice = static_cast<ma_device*>(pDevicePtr);
+    if (!pDevice) return;
+    auto* player = static_cast<AudioPlayer*>(pDevice->pUserData);
+    if (!player) return;
+
+    float* out = static_cast<float*>(pOutput);
+    const ma_uint32 channels = pDevice->playback.channels;
+
+    if (!player->m_playing.load(std::memory_order_relaxed)) {
+        std::memset(out, 0, frameCount * channels * sizeof(float));
+        return;
+    }
+
+    const auto totalAudioSamples = static_cast<size_t>(player->m_audio.samples.size());
+    const uint64_t end = player->m_endSample.load(std::memory_order_relaxed);
+    const double speed = static_cast<double>(player->m_speed.load(std::memory_order_relaxed));
+    const bool isStereo = (channels >= 2 && player->m_audio.info.channels >= 2 &&
+                           static_cast<size_t>(player->m_audio.leftSamples.size()) == totalAudioSamples &&
+                           static_cast<size_t>(player->m_audio.rightSamples.size()) == totalAudioSamples);
+
+    for (ma_uint32 i = 0; i < frameCount; ++i) {
+        double curr = player->m_currentSample.load(std::memory_order_relaxed);
+        if (curr >= end || curr >= totalAudioSamples) {
+            std::memset(out + i * channels, 0, (frameCount - i) * channels * sizeof(float));
+            player->m_playing.store(false, std::memory_order_relaxed);
+            player->m_finished.store(true, std::memory_order_release);
+            break;
+        }
+
+        const size_t i0 = static_cast<size_t>(curr);
+        const size_t i1 = std::min(i0 + 1, totalAudioSamples > 0 ? totalAudioSamples - 1 : 0);
+        const float frac = static_cast<float>(curr - i0);
+
+        if (isStereo) {
+            const float l = (1.0f - frac) * player->m_audio.leftSamples[i0] + frac * player->m_audio.leftSamples[i1];
+            const float r = (1.0f - frac) * player->m_audio.rightSamples[i0] + frac * player->m_audio.rightSamples[i1];
+            out[i * channels]     = l;
+            out[i * channels + 1] = r;
+            for (ma_uint32 ch = 2; ch < channels; ++ch) {
+                out[i * channels + ch] = 0.0f;
+            }
+        } else {
+            const float s = (1.0f - frac) * player->m_audio.samples[i0] + frac * player->m_audio.samples[i1];
+            for (ma_uint32 ch = 0; ch < channels; ++ch) {
+                out[i * channels + ch] = s;
+            }
+        }
+
+        player->m_currentSample.store(curr + speed, std::memory_order_relaxed);
+    }
+}
+
+AudioPlayer::AudioPlayer(QObject* parent)
+    : QObject(parent)
+{
     m_timer = new QTimer(this);
-    m_timer->setInterval(50);
+    m_timer->setInterval(30);
     connect(m_timer, &QTimer::timeout, this, &AudioPlayer::onTick);
 }
 
-AudioPlayer::~AudioPlayer() { stop(); }
+AudioPlayer::~AudioPlayer() {
+    stop();
+    uninitDevice();
+}
 
 void AudioPlayer::load(const AudioData& audio) {
     stop();
     m_audio = audio;
-
-    m_format.setSampleRate(std::max(1, int(audio.info.sampleRate * m_speed)));
-    m_format.setChannelCount(std::min<uint16_t>(audio.info.channels, 2));
-    m_format.setSampleFormat(QAudioFormat::Float);
+    initDevice();
 }
 
 void AudioPlayer::play(uint64_t startSample, uint64_t endSample) {
-    if (m_audio.samples.isEmpty() || m_playing) return;
+    if (m_audio.samples.isEmpty()) return;
 
-    m_startSample = std::min(startSample, (uint64_t)m_audio.samples.size());
-    m_endSample = std::clamp(endSample, m_startSample, uint64_t(m_audio.samples.size()));
+    stop();
 
-    int channels = m_format.channelCount();
-    size_t totalSamples = m_endSample - m_startSample;
-    QByteArray pcmData(static_cast<int>(totalSamples * channels * sizeof(float)), Qt::Uninitialized);
-    float* dst = reinterpret_cast<float*>(pcmData.data());
-
-    for (size_t i = 0; i < totalSamples; ++i) {
-        float s = m_audio.samples[m_startSample + i];
-        for (int ch = 0; ch < channels; ++ch)
-            *dst++ = s;
+    if (!m_device || !m_device->initialized) {
+        initDevice();
+    }
+    if (!m_device || !m_device->initialized) {
+        qWarning() << "[AudioPlayer] Failed to initialize audio playback device";
+        return;
     }
 
-    m_buffer = std::make_unique<QBuffer>();
-    m_buffer->setData(pcmData);
-    m_buffer->open(QIODevice::ReadOnly);
+    m_startSample = std::min(startSample, static_cast<uint64_t>(m_audio.samples.size()));
+    const uint64_t clampedEnd = std::clamp(endSample, m_startSample, static_cast<uint64_t>(m_audio.samples.size()));
+    m_endSample.store(clampedEnd);
+    m_currentSample.store(static_cast<double>(m_startSample));
+    m_finished.store(false);
+    m_playing.store(true);
 
-    m_sink = std::make_unique<QAudioSink>(m_format);
-    connect(m_sink.get(), &QAudioSink::stateChanged,
-            this, &AudioPlayer::onStateChanged);
+    if (ma_device_start(&m_device->device) != MA_SUCCESS) {
+        m_playing.store(false);
+        qWarning() << "[AudioPlayer] ma_device_start failed";
+        return;
+    }
 
-    m_playing = true;
-    m_sink->start(m_buffer.get());
     m_timer->start();
     emitState();
 }
 
 void AudioPlayer::resume() {
-    if (m_sink && !m_playing) {
-        m_sink->resume();
-        m_playing = true;
-        m_timer->start();
-        emitState();
+    if (!m_playing.load() && isLoaded() && m_currentSample.load() < m_endSample.load()) {
+        if (!m_device || !m_device->initialized) {
+            initDevice();
+        }
+        if (m_device && m_device->initialized) {
+            m_finished.store(false);
+            m_playing.store(true);
+            if (ma_device_start(&m_device->device) != MA_SUCCESS) {
+                m_playing.store(false);
+                return;
+            }
+            m_timer->start();
+            emitState();
+        }
     }
 }
 
 void AudioPlayer::pause() {
-    if (m_sink && m_playing) {
-        m_sink->suspend();
-        m_playing = false;
+    if (m_playing.load()) {
+        m_playing.store(false);
         m_timer->stop();
+        if (m_device && m_device->initialized) {
+            ma_device_stop(&m_device->device);
+        }
         emitState();
     }
 }
 
 void AudioPlayer::stop() {
     m_timer->stop();
-    m_sink.reset();
-    m_buffer.reset();
-    m_playing = false;
+    m_playing.store(false);
+    if (m_device && m_device->initialized) {
+        ma_device_stop(&m_device->device);
+    }
+    m_finished.store(false);
     m_startSample = 0;
-    m_endSample = 0;
+    m_endSample.store(0);
+    m_currentSample.store(0.0);
 }
 
 void AudioPlayer::seek(uint64_t sample) {
-    bool wasPlaying = m_playing;
+    const bool wasPlaying = m_playing.load();
+    const uint64_t end = m_endSample.load();
     stop();
-    m_startSample = std::min(sample, uint64_t(m_audio.samples.size()));
-    if (wasPlaying)
-        play(m_startSample);
-    else
-        emitState();
-}
-
-void AudioPlayer::setSpeed(float m) {
-    const bool wasPlaying = m_playing;
-    const uint64_t position = uint64_t(positionSecs() * m_audio.info.sampleRate);
-    m_speed = std::clamp(m, 0.25f, 4.0f);
-    m_format.setSampleRate(std::max(1, int(m_audio.info.sampleRate * m_speed)));
+    const uint64_t clamped = std::min(sample, static_cast<uint64_t>(m_audio.samples.size()));
+    m_currentSample.store(static_cast<double>(clamped));
     if (wasPlaying) {
-        stop();
-        play(position);
+        play(clamped, end > clamped ? end : static_cast<uint64_t>(m_audio.samples.size()));
+    } else {
+        emitState();
     }
 }
 
-bool AudioPlayer::isPlaying() const { return m_playing; }
-bool AudioPlayer::isLoaded() const { return !m_audio.samples.isEmpty(); }
+void AudioPlayer::setSpeed(float multiplier) {
+    m_speed.store(std::clamp(multiplier, 0.25f, 4.0f));
+}
+
+bool AudioPlayer::isPlaying() const {
+    return m_playing.load(std::memory_order_relaxed);
+}
+
+bool AudioPlayer::isLoaded() const {
+    return !m_audio.samples.isEmpty();
+}
 
 std::optional<uint64_t> AudioPlayer::totalSamples() const {
     if (m_audio.samples.isEmpty()) return std::nullopt;
-    return m_audio.samples.size();
+    return static_cast<uint64_t>(m_audio.samples.size());
 }
 
 float AudioPlayer::positionSecs() const {
     if (m_audio.info.sampleRate == 0) return 0.0f;
-    uint64_t elapsed = 0;
-    if (m_sink && m_playing) {
-        if (m_buffer)
-            elapsed = uint64_t(m_sink->processedUSecs() * m_audio.info.sampleRate
-                               * m_speed / 1000000.0);
-    }
-    uint64_t total = m_startSample + elapsed;
-    if (m_audio.info.sampleRate > 0)
-        return total / (float)m_audio.info.sampleRate;
-    return 0.0f;
+    const double curr = m_currentSample.load(std::memory_order_relaxed);
+    return static_cast<float>(curr / m_audio.info.sampleRate);
 }
 
-float AudioPlayer::durationSecs() const { return m_audio.info.durationSecs; }
+float AudioPlayer::durationSecs() const {
+    return m_audio.info.durationSecs;
+}
 
 void AudioPlayer::onTick() {
-    if (!m_sink || !m_playing) return;
-    emitState();
-}
-
-void AudioPlayer::onStateChanged(QAudio::State state) {
-    if (state == QAudio::IdleState || state == QAudio::StoppedState) {
-        m_playing = false;
+    if (m_finished.exchange(false, std::memory_order_acq_rel) || !m_playing.load(std::memory_order_relaxed)) {
+        m_playing.store(false);
         m_timer->stop();
+        if (m_device && m_device->initialized) {
+            ma_device_stop(&m_device->device);
+        }
         emitState();
         emit playbackFinished();
+        return;
     }
+    emitState();
 }
 
 void AudioPlayer::emitState() {
     PlaybackState ps;
-    ps.isPlaying = m_playing;
+    ps.isPlaying = isPlaying();
     ps.position = positionSecs();
     ps.duration = durationSecs();
     const float chartPos = ps.position * m_audio.info.sampleRate;
     emit playbackStateChanged(ps, chartPos);
+}
+
+void AudioPlayer::initDevice() {
+    uninitDevice();
+    if (m_audio.info.sampleRate == 0 || m_audio.samples.isEmpty()) return;
+
+    m_device = std::make_unique<AudioPlayerDevice>();
+    ma_device_config config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format = ma_format_f32;
+    config.playback.channels = (m_audio.info.channels >= 2) ? 2 : 1;
+    config.sampleRate = static_cast<ma_uint32>(m_audio.info.sampleRate);
+    config.dataCallback = reinterpret_cast<ma_device_data_proc>(miniaudioDataCallback);
+    config.pUserData = this;
+
+    ma_result res = ma_device_init(nullptr, &config, &m_device->device);
+    if (res != MA_SUCCESS) {
+        qWarning() << "[AudioPlayer] ma_device_init failed with error:" << res;
+        m_device.reset();
+        return;
+    }
+    m_device->initialized = true;
+}
+
+void AudioPlayer::uninitDevice() {
+    if (m_device) {
+        if (m_device->initialized) {
+            ma_device_stop(&m_device->device);
+            ma_device_uninit(&m_device->device);
+            m_device->initialized = false;
+        }
+        m_device.reset();
+    }
 }

@@ -6,12 +6,16 @@ VadResult EnergyVad::process(const QVector<float>& samples, uint32_t /*sampleRat
     int hopSize = frameSize / 2;
     VadResult result;
     result.frameSize = hopSize;
+    result.analysisFrameSize = frameSize;
+    result.energyLabel = QStringLiteral("平均帧能量");
 
     if (samples.size() < frameSize) return result;
 
     auto frames = frameSignal(samples, frameSize, false, false);
     int nFrames = frames.size();
     result.confidence.resize(nFrames);
+    result.energy.resize(nFrames);
+    result.highEnergyThreshold = threshold;
 
     int hangover = 0;
     for (int i = 0; i < nFrames; ++i) {
@@ -20,6 +24,7 @@ VadResult EnergyVad::process(const QVector<float>& samples, uint32_t /*sampleRat
         for (int j = 0; j < frameSize; ++j)
             energy += frame[j] * frame[j];
         energy /= frameSize;
+        result.energy[i] = energy;
 
         bool voice = energy > threshold;
         if (voice)

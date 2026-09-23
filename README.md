@@ -14,7 +14,7 @@ MyWaveQt 是一个面向**科研训练**的桌面语音信号分析项目。项�
 
 ### 音频与可视化
 
-- 读取 WAV、FLAC、OGG、MP3 等 libsndfile 支持的格式；
+- 读取 WAV、FLAC、OGG、MP3 等音频格式；
 - 显示单声道混音、左声道和右声道波形；
 - 支持通过文件多选或拖放一次加载多个音频，并在文件选择器中切换当前分析对象；
 - 支持将当前音频的选区另存为 WAV；
@@ -61,6 +61,8 @@ MyWaveQt 是一个面向**科研训练**的桌面语音信号分析项目。项�
 
 除此之外，还保留了能量 VAD、过零率 VAD 和实验性的倒谱 VAD。界面中可以修改门限、最小语音帧数等参数，并将有效语音帧的 MFCC 导出为 TSV 数据。
 
+VAD 参数停止拖动约 120 ms 后会自动重新计算当前文件。检测结果下方提供与主波形共享样本索引轴的调试轨道：显示检测器内部实际使用的能量、过零率、实际门限和最终 0/1 判决。最终语音段同时以半透明绿色区间覆盖到主图；特征点位于帧中心，区间边界则按帧起点、帧移和帧长计算，避免普通折线造成的半帧错位。
+
 ### 说话人识别
 
 - 从一个或多个训练音频中提取 13 维 MFCC；
@@ -76,12 +78,12 @@ MyWaveQt 是一个面向**科研训练**的桌面语音信号分析项目。项�
 | 组件 | 用途 |
 |---|---|
 | C++23 | 核心业务与信号处理 |
-| Qt 6 | GUI、音频播放、并发和跨平台支持 |
+| Qt 6 | GUI、并发和跨平台支持 |
 | QCustomPlot 2.1.1 | 波形、特征曲线和语谱图绘制 |
 | FFTW3 | FFT 与倒谱计算 |
-| libsndfile | 音频解码与 WAV 写入 |
+| miniaudio | 音频解码、播放与 WAV 写入 |
 | CMake + Ninja | 构建系统 |
-| vcpkg | FFTW3 与 libsndfile 依赖管理 |
+| vcpkg | FFTW3 与 miniaudio 依赖管理 |
 
 Qt 由系统包管理器提供，以避免通过 vcpkg 编译完整 Qt 所产生的较长构建时间。
 
@@ -114,14 +116,14 @@ Qt 由系统包管理器提供，以避免通过 vcpkg 编译完整 Qt 所产生
 - CMake 3.20 或更高版本；
 - Ninja；
 - 支持 C++23 的 GCC、Clang 或 MSVC；
-- Qt 6：Core、Gui、Widgets、PrintSupport、Multimedia、Concurrent、OpenGLWidgets；
+- Qt 6：Core、Gui、Widgets、PrintSupport、Concurrent、OpenGLWidgets；
 - Qt Wayland 平台插件（Linux Wayland 环境）；
 - vcpkg。
 
 以 Arch Linux 为例，可先安装系统依赖：
 
 ```bash
-sudo pacman -S --needed cmake ninja gcc qt6-base qt6-multimedia qt6-wayland
+sudo pacman -S --needed cmake ninja gcc qt6-base qt6-wayland
 ```
 
 准备 vcpkg：
@@ -152,7 +154,7 @@ cmake --build --preset default
 ./build/MyWaveQt
 ```
 
-首次配置时，vcpkg 会自动安装 FFTW3、libsndfile 及其依赖。生成目录为 `build/`。
+首次配置时，vcpkg 会自动安装 FFTW3、miniaudio 及其依赖。生成目录为 `build/`。
 
 ## 基本使用流程
 
@@ -196,12 +198,12 @@ ctest --test-dir build --output-on-failure
 - 当前以离线音频分析为主，尚未实现麦克风实时采集；
 - 说话人辨认属于闭集实验，不包含未知说话人拒识的完整开放集协议；
 - GMM 模型适合教学和基线实验，不代表现代深度说话人表征方法；
-- 不同音频格式可能由系统 libsndfile 的编译特性决定；
+- 常见音频格式（WAV、MP3、FLAC、OGG）均由 miniaudio 原生解码与回放；
 - 仓库中的旧 MFC 工程用于算法溯源和结果对照，不参与 Qt 版本构建。
 
 ## 第三方代码与许可
 
-仓库内包含 QCustomPlot 2.1.1，其源码声明采用 GPL-3.0-or-later 或商业许可。Qt、FFTW3、libsndfile 及其传递依赖分别遵循各自许可证。当前仓库根目录尚未提供独立的项目许可证；在发布、分发或用于其他项目之前，应先确认项目许可证以及所有第三方依赖的许可兼容性。
+仓库内包含 QCustomPlot 2.1.1，其源码声明采用 GPL-3.0-or-later 或商业许可。Qt、FFTW3、miniaudio 及其传递依赖分别遵循各自许可证。当前仓库根目录尚未提供独立的项目许可证；在发布、分发或用于其他项目之前，应先确认项目许可证以及所有第三方依赖的许可兼容性。
 
 ## 项目信息
 
