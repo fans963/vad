@@ -13,7 +13,12 @@ namespace {
 
 class FrameAxisTicker final : public QCPAxisTickerFixed {
 protected:
-    int getSubTickCount(double /*tickStep*/) override { return 1; }
+    int getSubTickCount(double step) override {
+        // Only show half-frame subtick if we are zoomed in enough that step == base frameSize
+        if (std::abs(step - this->tickStep()) < 1e-6)
+            return 1;
+        return 0;
+    }
 };
 
 } // namespace
@@ -306,7 +311,11 @@ void ChartWidget::handleChartEvent(const ChartEvent& event) {
         rebuildSeries();
         break;
     case ChartEvent::UpdateYRange:
+        break;
     case ChartEvent::UpdateMaxIndex:
+        if (event.maxIndex > 0.0f) {
+            m_maxIndex = event.maxIndex;
+        }
         break;
     case ChartEvent::UpdatePlaybackState:
         setPlayheadPosition(event.chartPosition);
@@ -317,8 +326,39 @@ void ChartWidget::handleChartEvent(const ChartEvent& event) {
     }
 }
 
+void ChartWidget::constrainXAxisRange(QCPRange& range) {
+    const double totalMax = (m_maxIndex > 0.0) ? m_maxIndex : 10000.0;
+    const double minSpan = std::max(16.0, m_frameGridSize > 0 ? m_frameGridSize * 0.25 : 64.0);
+    const double maxSpan = totalMax;
+
+    if (range.size() < minSpan) {
+        const double center = range.center();
+        range.lower = center - minSpan * 0.5;
+        range.upper = center + minSpan * 0.5;
+    } else if (range.size() > maxSpan) {
+        range.lower = 0.0;
+        range.upper = maxSpan;
+        return;
+    }
+
+    if (range.lower < 0.0) {
+        range.upper -= range.lower;
+        range.lower = 0.0;
+        if (range.upper > totalMax) {
+            range.upper = totalMax;
+        }
+    }
+    if (range.upper > totalMax) {
+        const double shift = range.upper - totalMax;
+        range.lower = std::max(0.0, range.lower - shift);
+        range.upper = totalMax;
+    }
+}
+
 void ChartWidget::setXRange(double min, double max) {
-    m_plot->xAxis->setRange(min, max);
+    QCPRange range(min, max);
+    constrainXAxisRange(range);
+    m_plot->xAxis->setRange(range);
     applyFrameGrid();
     m_plot->replot(QCustomPlot::rpQueuedReplot);
 }
@@ -747,7 +787,8 @@ void ChartWidget::applyFrameGrid() {
     auto* t = new FrameAxisTicker;
     t->setTickStep(m_frameGridSize);
     t->setTickOrigin(0.0);
-    t->setScaleStrategy(QCPAxisTickerFixed::ssNone);
+    t->setScaleStrategy(QCPAxisTickerFixed::ssMultiples);
+    t->setTickCount(8);
     m_plot->xAxis->setTicker(QSharedPointer<QCPAxisTicker>(t));
     m_plot->replot(QCustomPlot::rpQueuedReplot);
 }

@@ -296,7 +296,9 @@ void MainWindow::setupMenus() {
 
     auto* viewMenu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
     viewMenu->addAction(QStringLiteral("还原位置"), this, [this]() {
-        m_chartWidget->setXRange(0, 10000);
+        double maxIdx = m_chartWidget->maxIndex();
+        if (maxIdx <= 0.0) maxIdx = 10000.0;
+        m_chartWidget->setXRange(0, maxIdx);
         m_chartWidget->setYRange(-0.5, 0.5);
     });
     viewMenu->addAction(QStringLiteral("取消选区"), m_chartWidget, &ChartWidget::clearSelection);

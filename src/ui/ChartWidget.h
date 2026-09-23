@@ -36,6 +36,8 @@ public:
     bool savePng(const QString& path) const;
     bool savePdf(const QString& path) const;
 
+    double maxIndex() const { return m_maxIndex; }
+    void setMaxIndex(double maxIdx) { m_maxIndex = maxIdx; }
     int plotWidth() const;
     void setFrameGrid(int frameSize);
     void applyFrameGrid();
@@ -57,6 +59,7 @@ private:
     void clearVadRegions();
     void updateFrameGridStyle();
     void applyGlobalYRange();
+    void constrainXAxisRange(QCPRange& range);
     QColor seriesColor(const QString& filePath, DataType dt) const;
     bool isVisibleByKey(const QString& key) const;
 
@@ -73,6 +76,7 @@ private:
     double m_selectionEnd = -1.0;
     bool m_selecting = false;
     int m_lastWidth = 0;
+    double m_maxIndex = 10000.0;
     int m_frameGridSize = 0;
     VadDebugData m_vadDebug;
     QVector<QCPItemRect*> m_vadRegions;
