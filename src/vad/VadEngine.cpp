@@ -15,30 +15,37 @@ namespace {
 VadEngine::VadEngine() : m_algo(ReferenceVad{}) {}
 
 QStringList VadEngine::listAlgorithms() const {
-    return {QStringLiteral("reference"), QStringLiteral("energy"),
-            QStringLiteral("zcr"), QStringLiteral("cepstral")};
+    return {QStringLiteral("reference"), QStringLiteral("silero"),
+            QStringLiteral("energy"), QStringLiteral("zcr"),
+            QStringLiteral("cepstral")};
 }
 
 QString VadEngine::currentName() const {
+    std::shared_lock lock(m_mutex);
     return std::visit([](auto& v) { return v.name(); }, m_algo);
 }
 
 void VadEngine::setAlgorithm(const QString& name) {
+    std::unique_lock lock(m_mutex);
     if (name == QLatin1String("reference")) m_algo = ReferenceVad{};
+    else if (name == QLatin1String("silero")) m_algo = SileroVad{};
     else if (name == QLatin1String("zcr")) m_algo = ZcrVad{};
     else if (name == QLatin1String("cepstral")) m_algo = CepstralVad{};
     else m_algo = EnergyVad{};
 }
 
 QVector<VadParamDef> VadEngine::parameters() const {
+    std::shared_lock lock(m_mutex);
     return std::visit([](auto& v) { return v.parameters(); }, m_algo);
 }
 
 void VadEngine::setParameter(const QString& key, float value) {
+    std::unique_lock lock(m_mutex);
     std::visit([&](auto& v) { v.setParameter(key, value); }, m_algo);
 }
 
 VadResult VadEngine::process(const QVector<float>& samples, uint32_t sampleRate,
                               int frameSize) const {
+    std::shared_lock lock(m_mutex);
     return std::visit([&](auto& v) { return v.process(samples, sampleRate, frameSize); }, m_algo);
 }

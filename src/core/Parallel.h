@@ -42,6 +42,31 @@ void parallelFor(int count, F&& callable, int minChunkSize = 256) {
     });
 }
 
+// ── parallelForChunked: passes [start, end) index ranges to callable ────────
+template <typename F>
+void parallelForChunked(int count, F&& chunkCallable, int minChunkSize = 128) {
+    if (count <= 0) return;
+
+    const int maxThreads = QThreadPool::globalInstance()->maxThreadCount();
+    if (maxThreads <= 1 || count < minChunkSize * 2) {
+        chunkCallable(0, count);
+        return;
+    }
+
+    const int targetChunks = std::min(maxThreads * 2, std::max(2, (count + minChunkSize - 1) / minChunkSize));
+    const int chunkSize = (count + targetChunks - 1) / targetChunks;
+
+    QVector<QPair<int, int>> chunks;
+    chunks.reserve(targetChunks);
+    for (int start = 0; start < count; start += chunkSize) {
+        chunks.append({start, std::min(start + chunkSize, count)});
+    }
+
+    QtConcurrent::blockingMap(chunks, [&chunkCallable](const QPair<int, int>& chunk) {
+        chunkCallable(chunk.first, chunk.second);
+    });
+}
+
 // ── parallelMap: blocking mapped ────────────────────────────────────────────
 template <typename T, typename F>
 QVector<decltype(std::declval<F>()(std::declval<T>()))>

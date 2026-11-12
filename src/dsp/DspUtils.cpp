@@ -1,4 +1,5 @@
 #include "DspUtils.h"
+#include <numbers>
 
 FramedSignal frameSignalFast(const QVector<float>& samples,
                              int frameSize,
@@ -32,7 +33,7 @@ FramedSignal frameSignalFast(const QVector<float>& samples,
     if (hammingWindow) {
         hamming.resize(frameSize);
         for (int i = 0; i < frameSize; ++i)
-            hamming[i] = 0.54f - 0.46f * std::cos(2.0f * M_PI * i / (frameSize - 1));
+            hamming[i] = 0.54f - 0.46f * std::cos(2.0f * std::numbers::pi_v<float> * static_cast<float>(i) / (frameSize - 1));
     }
 
     float* dst = result.data.data();

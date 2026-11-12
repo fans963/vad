@@ -21,9 +21,9 @@ CachedChart CachedChart::getRange(float start, float end) const {
     int lo = std::lower_bound(points.begin(), points.end(), start, cmpLower) - points.begin();
     int hi = std::upper_bound(points.begin(), points.end(), end, cmpUpper) - points.begin();
     lo = std::max(0, lo - 1); // include one point before for visual continuity
-    hi = std::min((int)points.size(), hi + 1); // include one after
+    hi = std::min(static_cast<int>(points.size()), hi + 1); // include one after
     lo = std::max(0, lo);
-    hi = std::min((int)points.size(), hi);
+    hi = std::min(static_cast<int>(points.size()), hi);
 
     result.points.reserve(hi - lo);
     for (int i = lo; i < hi; ++i)

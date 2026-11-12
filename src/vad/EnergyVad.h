@@ -28,6 +28,6 @@ public:
         if (key == QLatin1String("threshold"))
             threshold = std::clamp(value, 0.001f, 1.0f);
         else if (key == QLatin1String("hangover_frames"))
-            hangoverFrames = std::clamp((int)value, 0, 50);
+            hangoverFrames = std::clamp(static_cast<int>(value), 0, 50);
     }
 };

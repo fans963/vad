@@ -11,14 +11,85 @@
 
 namespace {
 
-class FrameAxisTicker final : public QCPAxisTickerFixed {
+class FrameAxisTicker final : public QCPAxisTicker {
+public:
+    explicit FrameAxisTicker(int frameSize) : m_frameSize(frameSize) {
+        setTickCount(8);
+    }
+
+    void setFrameSize(int fs) { m_frameSize = fs; }
+    int frameSize() const { return m_frameSize; }
+
 protected:
+    double getTickStep(const QCPRange& range) override {
+        if (m_frameSize <= 0) return 100.0;
+        const double frameCount = range.size() / double(m_frameSize);
+        // Show a vertical separator line for EVERY frame when up to 400 frames are visible
+        if (frameCount <= 400.0) {
+            return m_frameSize;
+        }
+        // When zoomed way out, step in integer multiples of frameSize
+        const double targetStep = range.size() / 100.0;
+        const double factor = targetStep / m_frameSize;
+        double mult = 1.0;
+        const double multipliers[] = {2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0};
+        for (double m : multipliers) {
+            if (m >= factor) {
+                mult = m;
+                break;
+            }
+            mult = m;
+        }
+        return m_frameSize * mult;
+    }
+
     int getSubTickCount(double step) override {
-        // Only show half-frame subtick if we are zoomed in enough that step == base frameSize
-        if (std::abs(step - this->tickStep()) < 1e-6)
+        // Show half-frame subtick (50% overlap hop) when step is exactly 1 frame
+        if (m_frameSize > 0 && std::abs(step - m_frameSize) < 1e-6)
             return 1;
         return 0;
     }
+
+    QVector<double> createTickVector(double tickStep, const QCPRange& range) override {
+        QVector<double> result;
+        if (tickStep <= 0.0 || range.size() <= 0.0) return result;
+
+        qint64 first = std::floor(range.lower / tickStep);
+        qint64 last = std::ceil(range.upper / tickStep);
+        first = std::max<qint64>(0, first - 1);
+        last = last + 1;
+
+        result.reserve(static_cast<qsizetype>(last - first + 1));
+        for (qint64 i = first; i <= last; ++i) {
+            result.append(static_cast<double>(i * tickStep));
+        }
+        return result;
+    }
+
+    QVector<QString> createLabelVector(const QVector<double>& ticks,
+                                       const QLocale& locale,
+                                       QChar formatChar,
+                                       int precision) override {
+        QVector<QString> result(ticks.size());
+        if (ticks.isEmpty()) return result;
+
+        int step = 1;
+        if (ticks.size() > 80) step = 10;
+        else if (ticks.size() > 40) step = 5;
+        else if (ticks.size() > 20) step = 2;
+
+        for (int i = 0; i < ticks.size(); ++i) {
+            if (i % step == 0) {
+                result[i] = getTickLabel(ticks[i], locale, formatChar, precision);
+            } else {
+                result[i] = QString();
+            }
+        }
+        return result;
+    }
+
+private:
+    int m_frameSize = 512;
 };
 
 } // namespace
@@ -29,8 +100,13 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
 
     m_plot = new QCustomPlot(this);
     m_plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+    m_plot->axisRect()->setRangeDrag(Qt::Horizontal);
+    m_plot->axisRect()->setRangeZoom(Qt::Horizontal);
     m_plot->setPlottingHint(QCP::phFastPolylines, true); // 快速折线
     m_plot->xAxis->setLabel(QStringLiteral("Index"));
+    m_plot->xAxis->setNumberFormat("f");
+    m_plot->xAxis->setNumberPrecision(0);
+    m_plot->xAxis->ticker()->setTickCount(6);
     m_plot->yAxis->setLabel(QStringLiteral("Amplitude"));
     m_plot->legend->setVisible(true);
     m_plot->legend->setFont(QFont(m_plot->font().family(), 9));
@@ -48,6 +124,8 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
 
     // Playhead line (like Flutter PlotBand)
     m_playhead = new QCPItemLine(m_plot);
+    m_playhead->start->setTypeY(QCPItemPosition::ptAxisRectRatio);
+    m_playhead->end->setTypeY(QCPItemPosition::ptAxisRectRatio);
     m_playhead->start->setCoords(0, 0);
     m_playhead->end->setCoords(0, 1);
     m_playhead->setPen(QPen(Qt::red, 1.5));
@@ -126,6 +204,11 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
         plot->setMinimumHeight(height);
         plot->setMaximumHeight(height);
         plot->xAxis->setLabel(QStringLiteral("样本索引"));
+        plot->xAxis->setNumberFormat("f");
+        plot->xAxis->setNumberPrecision(0);
+        plot->xAxis->grid()->setVisible(true);
+        plot->xAxis->grid()->setSubGridVisible(true);
+        plot->xAxis->setSubTicks(true);
         plot->yAxis->setLabel(yLabel);
         plot->legend->setVisible(true);
         plot->legend->setFont(QFont(plot->font().family(), 8));
@@ -140,22 +223,34 @@ ChartWidget::ChartWidget(QWidget* parent) : QWidget(parent) {
     m_vadZcrPlot = makeDebugPlot(QStringLiteral("ZCR"), 125);
     m_vadDecisionPlot = makeDebugPlot(QStringLiteral("VAD"), 95);
 
-    const auto syncRange = [this](const QCPRange& range) {
+    connect(m_plot->xAxis, QOverload<const QCPRange&>::of(&QCPAxis::rangeChanged),
+            this, [this](const QCPRange& newRange) {
+        QCPRange constrained = newRange;
+        constrainXAxisRange(constrained);
+        if (std::abs(constrained.lower - newRange.lower) > 1e-4 ||
+            std::abs(constrained.upper - newRange.upper) > 1e-4) {
+            const QSignalBlocker blocker(m_plot->xAxis);
+            m_plot->xAxis->setRange(constrained);
+        }
         for (auto* plot : {m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
-            if (plot && plot->xAxis->range() != range) {
+            if (plot && (std::abs(plot->xAxis->range().lower - constrained.lower) > 1e-4 ||
+                         std::abs(plot->xAxis->range().upper - constrained.upper) > 1e-4)) {
                 const QSignalBlocker blocker(plot->xAxis);
-                plot->xAxis->setRange(range);
+                plot->xAxis->setRange(constrained);
                 plot->replot(QCustomPlot::rpQueuedReplot);
             }
         }
-    };
-    connect(m_plot->xAxis, QOverload<const QCPRange&>::of(&QCPAxis::rangeChanged),
-            this, syncRange);
+        emit xRangeChanged(constrained.lower, constrained.upper);
+    });
     for (auto* plot : {m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
         connect(plot->xAxis, QOverload<const QCPRange&>::of(&QCPAxis::rangeChanged),
                 this, [this, plot](const QCPRange& range) {
-            if (m_plot->xAxis->range() != range)
-                m_plot->xAxis->setRange(range);
+            QCPRange constrained = range;
+            constrainXAxisRange(constrained);
+            if (std::abs(m_plot->xAxis->range().lower - constrained.lower) > 1e-4 ||
+                std::abs(m_plot->xAxis->range().upper - constrained.upper) > 1e-4) {
+                m_plot->xAxis->setRange(constrained);
+            }
         });
     }
     applyPlotPalette();
@@ -248,15 +343,20 @@ void ChartWidget::applyPlotPalette() {
 void ChartWidget::updateFrameGridStyle() {
     if (!m_plot) return;
     const bool dark = palette().color(QPalette::Base).lightness() < 128;
-    auto* grid = m_plot->xAxis->grid();
 
-    // Keep full-frame and half-frame boundaries distinct on both themes.
-    const QColor fullFrame = dark ? QColor(105, 170, 255, 155)
-                                  : QColor(48, 105, 180, 130);
-    const QColor halfFrame = dark ? QColor(255, 190, 90, 145)
-                                  : QColor(230, 145, 35, 115);
-    grid->setPen(QPen(fullFrame, 1.0, Qt::SolidLine));
-    grid->setSubGridPen(QPen(halfFrame, 0.8, Qt::DashLine));
+    // High-visibility vertical separator lines for frames
+    const QColor fullFrame = dark ? QColor(100, 180, 255, 175)
+                                  : QColor(35, 110, 210, 150);
+    const QColor halfFrame = dark ? QColor(255, 180, 60, 160)
+                                  : QColor(225, 130, 25, 135);
+
+    for (auto* plot : {m_plot, m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+        if (!plot) continue;
+        auto* grid = plot->xAxis->grid();
+        if (!grid) continue;
+        grid->setPen(QPen(fullFrame, 1.2, Qt::SolidLine));
+        grid->setSubGridPen(QPen(halfFrame, 1.0, Qt::DashLine));
+    }
 }
 
 void ChartWidget::handleChartEvent(const ChartEvent& event) {
@@ -328,7 +428,7 @@ void ChartWidget::handleChartEvent(const ChartEvent& event) {
 
 void ChartWidget::constrainXAxisRange(QCPRange& range) {
     const double totalMax = (m_maxIndex > 0.0) ? m_maxIndex : 10000.0;
-    const double minSpan = std::max(16.0, m_frameGridSize > 0 ? m_frameGridSize * 0.25 : 64.0);
+    const double minSpan = std::min(totalMax, std::max(64.0, m_frameGridSize > 0 ? double(m_frameGridSize) * 0.5 : 64.0));
     const double maxSpan = totalMax;
 
     if (range.size() < minSpan) {
@@ -342,16 +442,14 @@ void ChartWidget::constrainXAxisRange(QCPRange& range) {
     }
 
     if (range.lower < 0.0) {
-        range.upper -= range.lower;
+        const double shift = -range.lower;
         range.lower = 0.0;
-        if (range.upper > totalMax) {
-            range.upper = totalMax;
-        }
+        range.upper = std::min(totalMax, range.upper + shift);
     }
     if (range.upper > totalMax) {
         const double shift = range.upper - totalMax;
-        range.lower = std::max(0.0, range.lower - shift);
         range.upper = totalMax;
+        range.lower = std::max(0.0, range.lower - shift);
     }
 }
 
@@ -698,6 +796,22 @@ bool ChartWidget::isVisible(const QString& filePath, DataType dt) const {
     return it == m_meta.end() || it->visible;
 }
 
+bool ChartWidget::hasSeries(const QString& filePath, DataType dt) const {
+    return m_data.contains(makeSeriesKey(filePath, dt));
+}
+
+bool ChartWidget::isSeriesVisible(const QString& filePath, DataType dt) const {
+    const QString k = makeSeriesKey(filePath, dt);
+    auto it = m_data.constFind(k);
+    if (it == m_data.cend()) return false;
+    auto metaIt = m_meta.constFind(k);
+    return (metaIt == m_meta.cend()) || metaIt->visible;
+}
+
+QCPRange ChartWidget::xRange() const {
+    return m_plot ? m_plot->xAxis->range() : QCPRange(0, 10000);
+}
+
 void ChartWidget::setSeriesVisible(const QString& filePath, DataType dt, bool visible) {
     m_meta[makeSeriesKey(filePath, dt)].visible = visible;
     rebuildSeries();
@@ -768,29 +882,42 @@ int ChartWidget::plotWidth() const { return m_plot->viewport().width(); }
 
 void ChartWidget::setFrameGrid(int frameSize) {
     m_frameGridSize = frameSize;
-    auto* grid = m_plot->xAxis->grid();
     const bool enabled = frameSize > 0;
-    grid->setVisible(enabled);
-    grid->setSubGridVisible(enabled);
+
+    for (auto* plot : {m_plot, m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+        if (!plot) continue;
+        auto* grid = plot->xAxis->grid();
+        if (grid) {
+            grid->setVisible(enabled);
+            grid->setSubGridVisible(enabled);
+        }
+        plot->xAxis->setSubTicks(enabled);
+    }
 
     updateFrameGridStyle();
-    m_plot->xAxis->setSubTicks(enabled);
     applyFrameGrid();
 }
 
 void ChartWidget::applyFrameGrid() {
     if (m_frameGridSize <= 0) {
-        m_plot->replot(QCustomPlot::rpQueuedReplot);
+        auto t = QSharedPointer<QCPAxisTicker>::create();
+        t->setTickCount(6);
+        for (auto* plot : {m_plot, m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+            if (plot) {
+                plot->xAxis->setTicker(t);
+                plot->replot(QCustomPlot::rpQueuedReplot);
+            }
+        }
         return;
     }
 
-    auto* t = new FrameAxisTicker;
-    t->setTickStep(m_frameGridSize);
-    t->setTickOrigin(0.0);
-    t->setScaleStrategy(QCPAxisTickerFixed::ssMultiples);
-    t->setTickCount(8);
-    m_plot->xAxis->setTicker(QSharedPointer<QCPAxisTicker>(t));
-    m_plot->replot(QCustomPlot::rpQueuedReplot);
+    auto t = QSharedPointer<FrameAxisTicker>::create(m_frameGridSize);
+    for (auto* plot : {m_plot, m_vadEnergyPlot, m_vadZcrPlot, m_vadDecisionPlot}) {
+        if (plot) {
+            plot->xAxis->setTicker(t);
+            plot->replot(QCustomPlot::rpQueuedReplot);
+        }
+    }
 }
 
 QStringList ChartWidget::allSeriesKeys() const {

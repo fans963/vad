@@ -86,11 +86,13 @@ void MainWindow::wireSignals() {
     connect(m_controlPanel, &ControlPanel::deleteSeriesRequested,
             this, [this](const QString& fp, DataType dt) {
         m_engine->removeChart(fp, dt);
+        updateMenuActionStates();
     });
     connect(m_controlPanel, &ControlPanel::visibilityToggled,
             this, [this](const QString& fp, DataType dt, bool vis) {
         m_chartWidget->setSeriesVisible(fp, dt, vis);
         m_engine->setChartVisibility(fp, dt, vis);
+        updateMenuActionStates();
     });
     connect(m_controlPanel, &ControlPanel::colorChanged,
             this, [this](const QString& fp, DataType dt, const QColor& color) {
@@ -122,6 +124,19 @@ void MainWindow::wireSignals() {
         });
         lodTimer->start();
     });
+    connect(m_chartWidget, &ChartWidget::xRangeChanged,
+            m_controlPanel, &ControlPanel::updateFromXRange);
+
+    // Sync active file across UI components
+    connect(m_fileSelector, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        if (idx >= 0 && m_fileSelector) {
+            setCurrentFile(m_fileSelector->itemData(idx).toString());
+        }
+    });
+    connect(m_infoPanel, &InfoPanel::fileSelected, this, &MainWindow::setCurrentFile);
+    connect(m_controlPanel, &ControlPanel::fileActivated, this, &MainWindow::setCurrentFile);
+
     connect(m_chartWidget, &ChartWidget::selectionRangeChanged, this,
             [this](double first, double last) {
         statusBar()->showMessage(QStringLiteral("已选择样本 %1 — %2（%3 个采样点）")
@@ -251,8 +266,9 @@ void MainWindow::setupMenus() {
         for (const auto& [label, type] : entries) {
             auto* action = menu->addAction(QString::fromUtf8(label));
             action->setCheckable(true);
+            m_curveActions[type] = action;
             connect(action, &QAction::toggled, this,
-                    [this, type](bool checked) { toggleCurveForSelected(type, checked); });
+                    [this, type](bool checked) { onMenuCurveToggled(type, checked); });
         }
     };
 
@@ -303,6 +319,17 @@ void MainWindow::setupMenus() {
     });
     viewMenu->addAction(QStringLiteral("取消选区"), m_chartWidget, &ChartWidget::clearSelection);
 
+    auto* playPauseAct = new QAction(QStringLiteral("播放/暂停/继续"), this);
+    playPauseAct->setShortcut(QKeySequence(Qt::Key_Space));
+    connect(playPauseAct, &QAction::triggered, this, [this]() {
+        if (m_engine->isAudioPlaying()) {
+            m_engine->pauseAudio();
+        } else {
+            m_engine->resumeAudio();
+        }
+    });
+    addAction(playPauseAct);
+
     auto* helpMenu = menuBar()->addMenu(QStringLiteral("帮助(&H)"));
     helpMenu->addAction(QStringLiteral("关于 MyWave"), this, [this]() {
         QMessageBox::about(this, QStringLiteral("关于 MyWave"),
@@ -320,6 +347,8 @@ void MainWindow::onOpenFile() {
         QStringLiteral("Open Audio File"), QString(), filter);
     for (const auto& f : files)
         loadAudioFile(f);
+    if (!files.isEmpty())
+        setCurrentFile(files.last());
 }
 
 void MainWindow::saveCurrentSelection() {
@@ -397,6 +426,7 @@ void MainWindow::loadAudioFile(const QString& filePath, const QByteArray& data) 
 
     m_controlPanel->refreshSeriesSelector();
     refreshFileSelector();
+    setCurrentFile(filePath);
 
     statusBar()->showMessage(
         QStringLiteral("Loaded: %1 (%2 Hz, %3 ch)")
@@ -405,6 +435,8 @@ void MainWindow::loadAudioFile(const QString& filePath, const QByteArray& data) 
 }
 
 QString MainWindow::currentFilePath() const {
+    if (!m_currentFilePath.isEmpty())
+        return m_currentFilePath;
     if (m_fileSelector && m_fileSelector->currentIndex() >= 0)
         return m_fileSelector->currentData().toString();
     return {};
@@ -421,27 +453,93 @@ void MainWindow::addCurveForSelected(DataType dt) {
 }
 
 void MainWindow::toggleCurveForSelected(DataType dt, bool visible) {
-    const auto filePath = currentFilePath();
-    if (filePath.isEmpty()) return;
-    if (visible) {
-        m_engine->setChartVisibility(filePath, dt, true);
-        m_engine->addChart(filePath, dt);
+    onMenuCurveToggled(dt, visible);
+}
+
+void MainWindow::onMenuCurveToggled(DataType dt, bool checked) {
+    const auto curFile = currentFilePath();
+    if (curFile.isEmpty()) return;
+    if (checked) {
+        if (dt == DataType::Vad) {
+            m_engine->removeChart(curFile, DataType::CepstralVad);
+            m_engine->setChartVisibility(curFile, DataType::Vad, true);
+            m_engine->addChart(curFile, DataType::Vad);
+        } else if (dt == DataType::CepstralVad) {
+            m_engine->removeChart(curFile, DataType::Vad);
+            m_engine->setChartVisibility(curFile, DataType::CepstralVad, true);
+            m_engine->addChart(curFile, DataType::CepstralVad);
+        } else {
+            m_engine->setChartVisibility(curFile, dt, true);
+            m_engine->addChart(curFile, dt);
+        }
     } else {
-        m_chartWidget->setSeriesVisible(filePath, dt, false);
-        m_engine->setChartVisibility(filePath, dt, false);
+        m_chartWidget->setSeriesVisible(curFile, dt, false);
+        m_engine->setChartVisibility(curFile, dt, false);
+        updateMenuActionStates();
     }
 }
 
 void MainWindow::refreshFileSelector() {
     if (!m_fileSelector) return;
-    QString cur = m_fileSelector->currentData().toString();
+    const QString cur = currentFilePath();
+    const auto files = m_engine->loadedFiles();
     m_fileSelector->blockSignals(true);
     m_fileSelector->clear();
-    for (const auto& fp : m_engine->loadedFiles())
+    for (const auto& fp : files)
         m_fileSelector->addItem(fp.section(QLatin1Char('/'), -1), fp);
     int idx = m_fileSelector->findData(cur);
-    if (idx >= 0) m_fileSelector->setCurrentIndex(idx);
+    if (idx >= 0) {
+        m_fileSelector->setCurrentIndex(idx);
+    } else if (m_fileSelector->count() > 0) {
+        m_fileSelector->setCurrentIndex(0);
+        m_currentFilePath = m_fileSelector->itemData(0).toString();
+    } else {
+        m_currentFilePath.clear();
+    }
     m_fileSelector->blockSignals(false);
+    updateMenuActionStates();
+}
+
+void MainWindow::setCurrentFile(const QString& filePath) {
+    if (filePath.isEmpty()) return;
+    m_currentFilePath = filePath;
+
+    if (m_fileSelector) {
+        int idx = m_fileSelector->findData(filePath);
+        if (idx >= 0 && m_fileSelector->currentIndex() != idx) {
+            const QSignalBlocker blocker(m_fileSelector);
+            m_fileSelector->setCurrentIndex(idx);
+        }
+    }
+    if (m_infoPanel) {
+        m_infoPanel->setSelectedFile(filePath);
+    }
+    if (m_controlPanel) {
+        m_controlPanel->setActiveFile(filePath);
+    }
+    if (m_engine) {
+        m_engine->loadAudioForPlayback(filePath);
+        m_engine->emitVadDebug(filePath);
+    }
+    updateMenuActionStates();
+}
+
+void MainWindow::updateMenuActionStates() {
+    const QString curFile = currentFilePath();
+    const bool hasFile = !curFile.isEmpty();
+    for (auto it = m_curveActions.begin(); it != m_curveActions.end(); ++it) {
+        const DataType dt = it.key();
+        QAction* act = it.value();
+        if (!act) continue;
+        const QSignalBlocker blocker(act);
+        act->setEnabled(hasFile);
+        if (hasFile) {
+            const bool visible = m_chartWidget ? m_chartWidget->isSeriesVisible(curFile, dt) : false;
+            act->setChecked(visible);
+        } else {
+            act->setChecked(false);
+        }
+    }
 }
 
 // ── Drag & drop ──────────────────────────────────────────────────────────
@@ -475,6 +573,7 @@ void MainWindow::onChartEvent(const ChartEvent& event) {
     case ChartEvent::RemoveChart:
     case ChartEvent::RemoveAllCharts:
         m_controlPanel->refreshSeriesSelector();
+        updateMenuActionStates();
         break;
     case ChartEvent::UpdatePlaybackState:
         m_controlPanel->setPlaybackState(event.playbackState, event.chartPosition);
@@ -497,10 +596,10 @@ void MainWindow::onGlobalFrameSizeChanged(int newSize) {
     m_chartWidget->setFrameGrid(newSize);
 }
 
-void MainWindow::onPlayAudio(const QString& filePath, double /*startFraction*/) {
+void MainWindow::onPlayAudio(const QString& filePath, double startFraction) {
     const QString targetFile = filePath.isEmpty() ? currentFilePath() : filePath;
     if (!targetFile.isEmpty()) {
-        m_engine->playAudio(targetFile, 0.0);
+        m_engine->playAudio(targetFile, startFraction);
     }
 }
 void MainWindow::onStopAudio() { m_engine->stopAudio(); }

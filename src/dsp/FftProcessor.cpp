@@ -1,5 +1,6 @@
 #include "FftProcessor.h"
 #include <fftw3.h>
+#include <numbers>
 #include <mutex>
 #include <unordered_map>
 #include <cmath>
@@ -53,6 +54,101 @@ struct PlanCache {
 
 static PlanCache gPlanCache;
 
+struct MelFilterBank {
+    struct Filter {
+        int binStart = 0;
+        QVector<float> weights;
+    };
+    int sampleRate = 0;
+    int numFilters = 0;
+    int fftSize = 0;
+    QVector<Filter> filters;
+
+    void init(int size, int sr, int nFilters) {
+        if (fftSize == size && sampleRate == sr && numFilters == nFilters)
+            return;
+        fftSize = size;
+        sampleRate = sr;
+        numFilters = nFilters;
+        filters.clear();
+        filters.resize(numFilters);
+
+        float maxFreq = sampleRate / 2.0f;
+        float minMel = FftProcessor::freqToMel(0.0f);
+        float maxMel = FftProcessor::freqToMel(maxFreq);
+        float melStep = (maxMel - minMel) / (numFilters + 1);
+        int N = (size - 1) * 2;
+
+        for (int i = 0; i < numFilters; ++i) {
+            float melCenter = minMel + (i + 1) * melStep;
+            float fCenter = FftProcessor::melToFreq(melCenter);
+            float fLeft   = FftProcessor::melToFreq(melCenter - melStep);
+            float fRight  = FftProcessor::melToFreq(melCenter + melStep);
+            int binL = std::max(0, static_cast<int>(std::floor(fLeft * N / sampleRate)));
+            int binC = std::max(binL, static_cast<int>(std::floor(fCenter * N / sampleRate)));
+            int binR = std::min(size - 1, static_cast<int>(std::floor(fRight * N / sampleRate)));
+
+            filters[i].binStart = binL;
+            if (binR >= binL) {
+                filters[i].weights.resize(binR - binL + 1);
+                for (int k = binL; k <= binR; ++k) {
+                    float w = (k < binC)
+                        ? float(k - binL) / (binC - binL + 1e-5f)
+                        : float(binR - k) / (binR - binC + 1e-5f);
+                    filters[i].weights[k - binL] = w;
+                }
+            }
+        }
+    }
+
+    QVector<float> apply(const float* magnitudes, int size) const {
+        QVector<float> filterBanks(numFilters, 0.0f);
+        for (int i = 0; i < numFilters; ++i) {
+            const auto& f = filters[i];
+            float sum = 0.0f;
+            const int count = f.weights.size();
+            for (int k = 0; k < count; ++k) {
+                int bin = f.binStart + k;
+                if (bin >= size) break;
+                float mag = magnitudes[bin];
+                sum += f.weights[k] * (mag * mag);
+            }
+            filterBanks[i] = sum;
+        }
+        return filterBanks;
+    }
+};
+
+struct DctPlan {
+    int numFilters = 0;
+    int numCoeffs = 0;
+    QVector<float> matrix;
+
+    void init(int nFilters, int nCoeffs) {
+        if (numFilters == nFilters && numCoeffs == nCoeffs) return;
+        numFilters = nFilters;
+        numCoeffs = nCoeffs;
+        matrix.resize(numCoeffs * numFilters);
+        for (int i = 0; i < numCoeffs; ++i) {
+            for (int j = 0; j < numFilters; ++j) {
+                matrix[i * numFilters + j] = std::cos(std::numbers::pi_v<float> * i / numFilters * (j + 0.5f));
+            }
+        }
+    }
+
+    void apply(const QVector<float>& logMel, QVector<float>& mfcc) const {
+        mfcc.resize(numCoeffs);
+        for (int i = 0; i < numCoeffs; ++i) {
+            float sum = 0.0f;
+            const float* row = matrix.constData() + i * numFilters;
+            for (int j = 0; j < numFilters; ++j) {
+                sum += logMel[j] * row[j];
+            }
+            mfcc[i] = sum;
+        }
+    }
+};
+
 struct FftProcessor::Impl {
     int N = 0;
     double* in = nullptr;
@@ -63,6 +159,9 @@ struct FftProcessor::Impl {
     fftw_complex* invIn = nullptr;
     double* invOut = nullptr;
     fftw_plan invPlan = nullptr;
+
+    MelFilterBank melBank;
+    DctPlan dctPlan;
 
     explicit Impl(int n) { init(n); }
 
@@ -175,31 +274,9 @@ QVector<float> FftProcessor::computeMelSpectrum(const QVector<float>& magnitudes
 QVector<float> FftProcessor::computeMelSpectrum(const float* magnitudes, int size,
                                                   int sampleRate, int numFilters) {
     if (!magnitudes || size <= 0) return {};
-
-    float maxFreq = sampleRate / 2.0f;
-    float minMel = freqToMel(0.0f);
-    float maxMel = freqToMel(maxFreq);
-    float melStep = (maxMel - minMel) / (numFilters + 1);
-    int N = (size - 1) * 2;
-
-    QVector<float> filterBanks(numFilters, 0.0f);
-    for (int i = 0; i < numFilters; ++i) {
-        float melCenter = minMel + (i + 1) * melStep;
-        float fCenter = melToFreq(melCenter);
-        float fLeft  = melToFreq(melCenter - melStep);
-        float fRight = melToFreq(melCenter + melStep);
-        int binL = std::floor(fLeft * N / sampleRate);
-        int binC = std::floor(fCenter * N / sampleRate);
-        int binR = std::floor(fRight * N / sampleRate);
-
-        for (int k = binL; k <= binR; ++k) {
-            if (k < 0 || k >= size) continue;
-            float w = (k < binC) ? float(k - binL) / (binC - binL + 1e-5f)
-                                 : float(binR - k) / (binR - binC + 1e-5f);
-            filterBanks[i] += w * magnitudes[k] * magnitudes[k];
-        }
-    }
-    return filterBanks;
+    MelFilterBank bank;
+    bank.init(size, sampleRate, numFilters);
+    return bank.apply(magnitudes, size);
 }
 
 QVector<float> FftProcessor::computeMFCC(const QVector<float>& timeData,
@@ -209,19 +286,16 @@ QVector<float> FftProcessor::computeMFCC(const QVector<float>& timeData,
 
 QVector<float> FftProcessor::computeMFCC(const float* timeData, int size,
                                            int sampleRate, int numFilters, int numCoeffs) {
+    d->melBank.init(size, sampleRate, numFilters);
+    d->dctPlan.init(numFilters, numCoeffs);
     auto mags = computeMagnitudeSpectrum(timeData, size);
-    auto melSpec = computeMelSpectrum(mags.constData(), mags.size(), sampleRate, numFilters);
+    auto melSpec = d->melBank.apply(mags.constData(), mags.size());
 
     QVector<float> logMelSpec(melSpec.size());
     for (int i = 0; i < melSpec.size(); ++i)
         logMelSpec[i] = std::log(melSpec[i] + 1e-10f);
 
-    QVector<float> mfcc(numCoeffs, 0.0f);
-    for (int i = 0; i < numCoeffs; ++i) {
-        float sum = 0.0f;
-        for (int j = 0; j < melSpec.size(); ++j)
-            sum += logMelSpec[j] * std::cos(M_PI * i / melSpec.size() * (j + 0.5f));
-        mfcc[i] = sum;
-    }
+    QVector<float> mfcc;
+    d->dctPlan.apply(logMelSpec, mfcc);
     return mfcc;
 }

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480">
+<defs>
+<marker id="arrow-5B6B82" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,9 L9,4.5 z" fill="#5B6B82"/></marker>
+<marker id="arrow-2F5FE3" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,9 L9,4.5 z" fill="#2F5FE3"/></marker>
+<marker id="arrow-0E7C75" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,9 L9,4.5 z" fill="#0E7C75"/></marker>
+<marker id="arrow-B45309" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,9 L9,4.5 z" fill="#B45309"/></marker>
+<marker id="arrow-14315C" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,9 L9,4.5 z" fill="#14315C"/></marker>
+</defs>
+<rect x="0" y="0" width="1200" height="480" fill="#FFFFFF"/>
+<text x="50" y="38" text-anchor="start" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700" fill="#0B1220">VAD 处理流水线</text>
+<text x="50" y="78" text-anchor="start" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="400" fill="#5B6B82">从音频到语音段：特征 → 相对门限 → 持续判决 → 扩展与合并</text>
+<rect x="40" y="180" width="140" height="86" rx="16" fill="#F1F5F9" stroke="#5B6B82" stroke-width="1.5" opacity="1"/>
+<text x="110" y="214" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="700" fill="#0B1220">音频输入</text>
+<text x="110" y="236" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#5B6B82">多格式解码</text>
+<circle cx="58" cy="162" r="13" fill="#5B6B82"/>
+<text x="58" y="162.5" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">01</text>
+<rect x="210" y="180" width="170" height="86" rx="16" fill="#EEF3FB" stroke="#2F5FE3" stroke-width="1.5" opacity="1"/>
+<text x="295" y="214" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="700" fill="#0B1220">分帧加窗</text>
+<text x="295" y="236" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#5B6B82">512 点 · 50% 帧移</text>
+<circle cx="228" cy="162" r="13" fill="#2F5FE3"/>
+<text x="228" y="162.5" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">02</text>
+<rect x="410" y="180" width="190" height="86" rx="16" fill="#E8F4F2" stroke="#0E7C75" stroke-width="1.5" opacity="1"/>
+<text x="505" y="214" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="700" fill="#0B1220">能量 + ZCR</text>
+<text x="505" y="236" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#5B6B82">短时能量 / 过零率</text>
+<circle cx="428" cy="162" r="13" fill="#0E7C75"/>
+<text x="428" y="162.5" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">03</text>
+<rect x="630" y="180" width="190" height="86" rx="16" fill="#FBF0E4" stroke="#B45309" stroke-width="1.5" opacity="1"/>
+<text x="725" y="214" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="700" fill="#0B1220">峰值相对门限</text>
+<text x="725" y="236" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#5B6B82">Eh / El / Zth</text>
+<circle cx="648" cy="162" r="13" fill="#B45309"/>
+<text x="648" y="162.5" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">04</text>
+<rect x="850" y="180" width="170" height="86" rx="16" fill="#14315C" stroke="#14315C" stroke-width="1.5" opacity="1"/>
+<text x="935" y="214" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="700" fill="#FFFFFF">持续 + 扩展</text>
+<text x="935" y="236" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#CBD5E1">Nv=3 帧 · El + Zth</text>
+<circle cx="868" cy="162" r="13" fill="#14315C"/>
+<text x="868" y="162.5" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">05</text>
+<line x1="184" y1="223" x2="204" y2="223" stroke="#5B6B82" stroke-width="2" marker-end="url(#arrow-5B6B82)"/>
+<line x1="384" y1="223" x2="404" y2="223" stroke="#5B6B82" stroke-width="2" marker-end="url(#arrow-5B6B82)"/>
+<line x1="604" y1="223" x2="624" y2="223" stroke="#5B6B82" stroke-width="2" marker-end="url(#arrow-5B6B82)"/>
+<line x1="824" y1="223" x2="844" y2="223" stroke="#5B6B82" stroke-width="2" marker-end="url(#arrow-5B6B82)"/>
+<rect x="1050" y="180" width="120" height="86" rx="16" fill="#E8F4F2" stroke="#0E7C75" stroke-width="1.5" opacity="1"/>
+<text x="1110" y="214" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="700" fill="#0E7C75">语音段</text>
+<text x="1110" y="236" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10" font-weight="400" fill="#5B6B82">起点 / 终点</text>
+<line x1="1024" y1="223" x2="1046" y2="223" stroke="#0E7C75" stroke-width="2" marker-end="url(#arrow-0E7C75)"/>
+<rect x="590" y="330" width="240" height="68" rx="12" fill="#FFFFFF" stroke="#B45309" stroke-width="1.2" opacity="1"/>
+<text x="710" y="351" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="700" fill="#B45309">参数可调</text>
+<text x="710" y="373" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.2" font-weight="400" fill="#5B6B82">低/高能量偏移 · ZCR 比例 · 最小帧数</text>
+<line x1="710" y1="328" x2="725" y2="270" stroke="#B45309" stroke-width="1.2" marker-end="url(#arrow-B45309)" stroke-dasharray="5 5"/>
+<rect x="850" y="330" width="270" height="68" rx="12" fill="#FFFFFF" stroke="#5B6B82" stroke-width="1.2" opacity="1"/>
+<text x="985" y="351" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="700" fill="#14315C">复核策略</text>
+<text x="985" y="373" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.2" font-weight="400" fill="#5B6B82">非平稳噪声 → 基音周期性 / Silero</text>
+<line x1="985" y1="328" x2="935" y2="270" stroke="#5B6B82" stroke-width="1.2" marker-end="url(#arrow-5B6B82)" stroke-dasharray="5 5"/>
+<text x="600" y="445" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="11.5" font-weight="400" fill="#5B6B82">能量、ZCR 与判决三轨同屏对齐；参数改动后即时重算。</text>
+</svg>

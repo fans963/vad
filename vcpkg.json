@@ -1,16 +1,28 @@
 {
-  "$comment": "Qt6 (qtbase) is intentionally NOT managed by vcpkg — it is linked against the system Qt6 installation (apt/pacman) to avoid the multi-hour vcpkg rebuild of Qt.",
+  "$comment": "Qt6 (qtbase) is intentionally NOT managed by vcpkg \u2014 it is linked against the system Qt6 installation (apt/pacman) to avoid the multi-hour vcpkg rebuild of Qt.",
   "name": "mywave-qt",
   "version": "1.0.0",
   "dependencies": [
     "miniaudio",
     {
+      "name": "openvino",
+      "features": [
+        "cpu",
+        "ir"
+      ],
+      "default-features": false
+    },
+    {
       "name": "fftw3",
-      "features": ["avx2"]
+      "features": [
+        "avx2"
+      ]
     },
     {
       "name": "mimalloc",
-      "features": ["override"]
+      "features": [
+        "override"
+      ]
     }
   ]
 }

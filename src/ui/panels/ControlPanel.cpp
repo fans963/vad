@@ -12,6 +12,17 @@
 #include <QColorDialog>
 #include <QMessageBox>
 
+namespace {
+QString formatTime(float totalSecs) {
+    if (!std::isfinite(totalSecs) || totalSecs < 0.0f) totalSecs = 0.0f;
+    int minutes = static_cast<int>(totalSecs) / 60;
+    float remainderSecs = totalSecs - float(minutes * 60);
+    return QStringLiteral("%1:%2")
+        .arg(minutes, 2, 10, QLatin1Char('0'))
+        .arg(remainderSecs, 5, 'f', 2, QLatin1Char('0'));
+}
+} // namespace
+
 ControlPanel::ControlPanel(QWidget* parent) : QWidget(parent) {
     setupUi();
 
@@ -48,38 +59,58 @@ void ControlPanel::setupUi() {
     rootLayout->addWidget(dashboard, 0);
     rootLayout->addStretch(1);
 
-    // ── Series selector ──────────────────────────────────────────────────
-    auto* seriesGroup = new QGroupBox(QStringLiteral("曲线管理"));
+    // ── Series selector & playback ──────────────────────────────────────
+    auto* seriesGroup = new QGroupBox(QStringLiteral("曲线与音频回放"));
     auto* sgLayout = new QVBoxLayout(seriesGroup);
+    sgLayout->setSpacing(6);
 
     auto* selRow = new QHBoxLayout;
-    selRow->addWidget(new QLabel(QStringLiteral("选择：")));
+    selRow->addWidget(new QLabel(QStringLiteral("曲线：")));
     m_seriesCombo = new QComboBox;
-    m_seriesCombo->setMinimumWidth(150);
+    m_seriesCombo->setMinimumWidth(140);
     m_seriesCombo->setMaximumWidth(460);
-    selRow->addWidget(m_seriesCombo);
+    selRow->addWidget(m_seriesCombo, 1);
+    m_colorBtn = new QPushButton(QStringLiteral("颜色"));
+    m_colorBtn->setMaximumWidth(55);
+    selRow->addWidget(m_colorBtn);
+    m_visibleBtn = new QPushButton(QStringLiteral("显示/隐藏"));
+    m_visibleBtn->setMaximumWidth(75);
+    selRow->addWidget(m_visibleBtn);
+    m_deleteBtn = new QPushButton(QStringLiteral("删除"));
+    m_deleteBtn->setMaximumWidth(55);
+    m_deleteBtn->setStyleSheet(QStringLiteral("color: red;"));
+    selRow->addWidget(m_deleteBtn);
     selRow->addStretch(1);
     sgLayout->addLayout(selRow);
 
-    auto* btnRow = new QHBoxLayout;
-    m_colorBtn = new QPushButton(QStringLiteral("颜色"));
-    m_colorBtn->setMaximumWidth(60);
-    btnRow->addWidget(m_colorBtn);
-    m_visibleBtn = new QPushButton(QStringLiteral("显示/隐藏"));
-    m_visibleBtn->setMaximumWidth(80);
-    btnRow->addWidget(m_visibleBtn);
-    m_playBtn = new QPushButton(QStringLiteral("播放"));
-    m_playBtn->setMaximumWidth(100);
-    btnRow->addWidget(m_playBtn);
-    m_stopBtn = new QPushButton(QStringLiteral("停止"));
-    m_stopBtn->setMaximumWidth(70);
-    btnRow->addWidget(m_stopBtn);
-    m_deleteBtn = new QPushButton(QStringLiteral("删除曲线"));
-    m_deleteBtn->setMaximumWidth(90);
-    m_deleteBtn->setStyleSheet("color: red;");
-    btnRow->addWidget(m_deleteBtn);
-    btnRow->addStretch(1);
-    sgLayout->addLayout(btnRow);
+    auto* playRow = new QHBoxLayout;
+    playRow->addWidget(new QLabel(QStringLiteral("回放：")));
+    m_playBtn = new QPushButton(QStringLiteral("▶ 播放"));
+    m_playBtn->setMaximumWidth(80);
+    playRow->addWidget(m_playBtn);
+    m_pauseBtn = new QPushButton(QStringLiteral("⏸ 暂停"));
+    m_pauseBtn->setMaximumWidth(80);
+    m_pauseBtn->setEnabled(false);
+    playRow->addWidget(m_pauseBtn);
+    m_stopBtn = new QPushButton(QStringLiteral("⏹ 停止"));
+    m_stopBtn->setMaximumWidth(80);
+    m_stopBtn->setEnabled(false);
+    playRow->addWidget(m_stopBtn);
+    playRow->addStretch(1);
+    sgLayout->addLayout(playRow);
+
+    auto* progressRow = new QHBoxLayout;
+    progressRow->addWidget(new QLabel(QStringLiteral("进度：")));
+    m_playbackSlider = new QSlider(Qt::Horizontal);
+    m_playbackSlider->setRange(0, 1000);
+    m_playbackSlider->setValue(0);
+    m_playbackSlider->setTracking(true);
+    progressRow->addWidget(m_playbackSlider, 1);
+    m_playbackTimeLabel = new QLabel(QStringLiteral("00:00.00 / 00:00.00"));
+    m_playbackTimeLabel->setStyleSheet(QStringLiteral("font-family: monospace; font-size: 11px;"));
+    progressRow->addWidget(m_playbackTimeLabel);
+    sgLayout->addLayout(progressRow);
+
     layout->addWidget(seriesGroup, 0, 0);
 
     // ── Axis controls ─────────────────────────────────────────────────────
@@ -240,7 +271,10 @@ void ControlPanel::setupUi() {
     connect(m_visibleBtn, &QPushButton::clicked, this, &ControlPanel::onToggleVisibility);
     connect(m_deleteBtn, &QPushButton::clicked, this, &ControlPanel::onDeleteSelected);
     connect(m_playBtn, &QPushButton::clicked, this, &ControlPanel::onPlaySelected);
+    connect(m_pauseBtn, &QPushButton::clicked, this, &ControlPanel::onPauseResume);
     connect(m_stopBtn, &QPushButton::clicked, this, &ControlPanel::onStop);
+    connect(m_playbackSlider, &QSlider::sliderMoved, this, &ControlPanel::onSliderSeek);
+    connect(m_playbackSlider, &QSlider::sliderReleased, this, &ControlPanel::onSliderSeekReleased);
     connect(m_vadAlgoCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ControlPanel::onVadAlgorithmChanged);
     connect(m_vadRunBtn, &QPushButton::clicked, this, &ControlPanel::onRunVad);
@@ -271,7 +305,7 @@ double ControlPanel::xViewMax() const {
     double slack = m_maxIndex - viewable;
     double offset = (xPosition() - 0.5) * slack;
     double center = m_maxIndex * 0.5 + offset;
-    return std::min((double)m_maxIndex, center + viewable / 2);
+    return std::min(static_cast<double>(m_maxIndex), center + viewable / 2);
 }
 double ControlPanel::yViewMin() const {
     double range = m_yAutoMax - m_yAutoMin;
@@ -393,6 +427,12 @@ void ControlPanel::onSeriesSelectorChanged(int index) {
     if (index < 0) return;
     QString key = m_seriesCombo->itemData(index).toString();
     emit selectionChanged(key);
+    if (!key.isEmpty()) {
+        auto [fp, dt] = parseSeriesKey(key);
+        if (!fp.isEmpty()) {
+            emit fileActivated(fp);
+        }
+    }
     if (m_chartWidget) m_chartWidget->setSelectedKey(key);
 
     const bool hasSelectedSeries = !key.isEmpty() && m_chartWidget;
@@ -443,21 +483,95 @@ void ControlPanel::onDeleteSelected() {
 }
 
 void ControlPanel::onPlaySelected() {
+    if (m_isPaused) {
+        m_isPaused = false;
+        m_pauseBtn->setText(QStringLiteral("⏸ 暂停"));
+        m_pauseBtn->setEnabled(true);
+        m_stopBtn->setEnabled(true);
+        emit resumeRequested();
+        return;
+    }
+    double frac = m_playbackSlider ? double(m_playbackSlider->value()) / 1000.0 : 0.0;
+    if (frac >= 0.999) frac = 0.0;
+
     QString key = m_seriesCombo->currentData().toString();
-    if (key.isEmpty()) return;
-    auto [fp, dt] = parseSeriesKey(key);
-    emit playAudioRequested(fp, 0.0);
+    QString fp;
+    if (!key.isEmpty()) {
+        auto [parsedFp, dt] = parseSeriesKey(key);
+        fp = parsedFp;
+    }
+    m_isPaused = false;
+    m_pauseBtn->setText(QStringLiteral("⏸ 暂停"));
+    m_pauseBtn->setEnabled(true);
+    m_stopBtn->setEnabled(true);
+    emit playAudioRequested(fp, frac);
 }
 
-void ControlPanel::onStop() { emit stopRequested(); }
+void ControlPanel::onPauseResume() {
+    if (m_isPaused) {
+        m_isPaused = false;
+        m_pauseBtn->setText(QStringLiteral("⏸ 暂停"));
+        m_pauseBtn->setEnabled(true);
+        m_stopBtn->setEnabled(true);
+        emit resumeRequested();
+    } else {
+        m_isPaused = true;
+        m_pauseBtn->setText(QStringLiteral("▶ 继续"));
+        m_pauseBtn->setEnabled(true);
+        m_stopBtn->setEnabled(true);
+        emit pauseRequested();
+    }
+}
+
+void ControlPanel::onStop() {
+    m_isPaused = false;
+    m_pauseBtn->setText(QStringLiteral("⏸ 暂停"));
+    m_pauseBtn->setEnabled(false);
+    m_stopBtn->setEnabled(false);
+    if (m_playbackSlider) {
+        const QSignalBlocker blocker(m_playbackSlider);
+        m_playbackSlider->setValue(0);
+    }
+    if (m_playbackTimeLabel) {
+        m_playbackTimeLabel->setText(formatTime(0.0f) + QStringLiteral(" / ") + formatTime(m_currentDuration));
+    }
+    emit stopRequested();
+}
+
+void ControlPanel::onSliderSeek(int val) {
+    m_isTrackingSlider = true;
+    double frac = std::clamp(val / 1000.0, 0.0, 1.0);
+    if (m_playbackTimeLabel) {
+        m_playbackTimeLabel->setText(formatTime(float(frac * m_currentDuration)) + QStringLiteral(" / ") + formatTime(m_currentDuration));
+    }
+    emit seekRequested(frac);
+}
+
+void ControlPanel::onSliderSeekReleased() {
+    m_isTrackingSlider = false;
+    if (!m_playbackSlider) return;
+    double frac = std::clamp(m_playbackSlider->value() / 1000.0, 0.0, 1.0);
+    emit seekRequested(frac);
+}
 
 // ── VAD ─────────────────────────────────────────────────────────────────────
+
+namespace {
+QString vadAlgorithmDisplayName(const QString& name) {
+    if (name == QLatin1String("reference")) return QStringLiteral("双门限双特征 (参考标准)");
+    if (name == QLatin1String("silero"))    return QStringLiteral("深度学习");
+    if (name == QLatin1String("energy"))    return QStringLiteral("短时能量检测 (Energy)");
+    if (name == QLatin1String("zcr"))       return QStringLiteral("过零率检测 (ZCR)");
+    if (name == QLatin1String("cepstral"))  return QStringLiteral("倒谱距离检测 (Cepstral)");
+    return name;
+}
+}
 
 void ControlPanel::setVadAlgorithms(const QStringList& names, const QString& current) {
     m_vadAlgoCombo->blockSignals(true);
     m_vadAlgoCombo->clear();
     for (const auto& n : names) {
-        m_vadAlgoCombo->addItem(n);
+        m_vadAlgoCombo->addItem(vadAlgorithmDisplayName(n), n);
         if (n == current) m_vadAlgoCombo->setCurrentIndex(m_vadAlgoCombo->count() - 1);
     }
     m_vadAlgoCombo->blockSignals(false);
@@ -478,8 +592,8 @@ void ControlPanel::setVadParams(const QVector<VadParamDef>& params) {
 
         auto* slider = new QSlider(Qt::Horizontal);
         if (p.kind == VadParamKind::Int) {
-            slider->setRange((int)p.min, (int)p.max);
-            slider->setValue((int)p.value);
+            slider->setRange(static_cast<int>(p.min), static_cast<int>(p.max));
+            slider->setValue(static_cast<int>(p.value));
         } else {
             slider->setRange(p.min / p.step, p.max / p.step);
             slider->setValue(p.value / p.step);
@@ -499,7 +613,7 @@ void ControlPanel::setVadParams(const QVector<VadParamDef>& params) {
         connect(slider, &QSlider::valueChanged, this,
                 [this, p, valueEdit](int v) {
             float val = p.kind == VadParamKind::Int
-                ? (float)v
+                ? static_cast<float>(v)
                 : v * p.step;
             const QSignalBlocker blocker(valueEdit);
             valueEdit->setValue(val);
@@ -524,25 +638,107 @@ void ControlPanel::setVadParams(const QVector<VadParamDef>& params) {
 }
 
 void ControlPanel::onVadAlgorithmChanged(int index) {
-    if (index >= 0)
-        emit vadAlgorithmChanged(m_vadAlgoCombo->currentText());
+    if (index >= 0) {
+        const QString id = m_vadAlgoCombo->itemData(index).toString();
+        emit vadAlgorithmChanged(id.isEmpty() ? m_vadAlgoCombo->itemText(index) : id);
+    }
 }
 
 void ControlPanel::onVadParamChanged() { /* handled inline */ }
 
 void ControlPanel::onRunVad() {
     QString key = m_seriesCombo->currentData().toString();
-    // Fallback: use first non-empty key from combo if none selected
-    if (key.isEmpty() && m_seriesCombo->count() > 1) {
-        key = m_seriesCombo->itemData(1).toString(); // index 0 is "(none)"
+    QString target;
+    if (!key.isEmpty()) {
+        auto [fp, dt] = parseSeriesKey(key);
+        target = fp;
     }
-    if (key.isEmpty()) return;
-    auto [fp, dt] = parseSeriesKey(key);
-    qDebug() << "[CTRL] run VAD on:" << fp;
-    emit vadRunRequested(fp);
+    if (target.isEmpty() && m_seriesCombo->count() > 1) {
+        key = m_seriesCombo->itemData(1).toString();
+        auto [fp, dt] = parseSeriesKey(key);
+        target = fp;
+    }
+    qDebug() << "[CTRL] run VAD on:" << target;
+    emit vadRunRequested(target);
+}
+
+void ControlPanel::setActiveFile(const QString& filePath) {
+    if (filePath.isEmpty() || !m_seriesCombo) return;
+    const QString curKey = m_seriesCombo->currentData().toString();
+    if (!curKey.isEmpty()) {
+        auto [curFp, curDt] = parseSeriesKey(curKey);
+        if (curFp == filePath) return;
+    }
+    for (int i = 0; i < m_seriesCombo->count(); ++i) {
+        const QString k = m_seriesCombo->itemData(i).toString();
+        if (k.isEmpty()) continue;
+        auto [fp, dt] = parseSeriesKey(k);
+        if (fp == filePath) {
+            const QSignalBlocker blocker(m_seriesCombo);
+            m_seriesCombo->setCurrentIndex(i);
+            onSeriesSelectorChanged(i);
+            return;
+        }
+    }
+}
+
+void ControlPanel::updateFromXRange(double min, double max) {
+    if (m_maxIndex <= 0) return;
+    const double viewable = std::max(1.0, max - min);
+    const double zoom = std::clamp(double(m_maxIndex) / viewable, 1.0, double(m_xZoomSlider->maximum()) / 100.0);
+    const int zoomVal = qRound(zoom * 100.0);
+
+    const double slack = double(m_maxIndex) - viewable;
+    int posVal = 500;
+    if (slack > 1.0) {
+        const double center = 0.5 * (min + max);
+        const double offset = center - double(m_maxIndex) * 0.5;
+        const double pos = std::clamp(0.5 + offset / slack, 0.0, 1.0);
+        posVal = qRound(pos * 1000.0);
+    }
+
+    if (std::abs(m_xZoomSlider->value() - zoomVal) > 1 ||
+        std::abs(m_xPosSlider->value() - posVal) > 1) {
+        const QSignalBlocker b1(m_xZoomSlider);
+        const QSignalBlocker b2(m_xPosSlider);
+        m_xZoomSlider->setValue(zoomVal);
+        m_xPosSlider->setValue(posVal);
+        m_xZoomEdit->setText(QStringLiteral("%1x").arg(zoom, 0, 'f', 2));
+        updateViewInfo();
+    }
 }
 
 void ControlPanel::setPlaybackState(const PlaybackState& state, float chartPos) {
-    Q_UNUSED(state); Q_UNUSED(chartPos);
-    // Update playback display if play bar is added later
+    Q_UNUSED(chartPos);
+    m_currentDuration = state.duration;
+
+    if (!m_isTrackingSlider && m_playbackSlider) {
+        const double frac = (state.duration > 0.001f)
+            ? (state.position / state.duration) : 0.0;
+        const QSignalBlocker blocker(m_playbackSlider);
+        m_playbackSlider->setValue(qRound(std::clamp(frac, 0.0, 1.0) * 1000.0));
+    }
+
+    if (m_playbackTimeLabel) {
+        m_playbackTimeLabel->setText(formatTime(state.position) + QStringLiteral(" / ") + formatTime(state.duration));
+    }
+
+    if (state.isPlaying) {
+        m_isPaused = false;
+        m_pauseBtn->setText(QStringLiteral("⏸ 暂停"));
+        m_pauseBtn->setEnabled(true);
+        m_stopBtn->setEnabled(true);
+    } else {
+        if (state.position > 0.05f && state.position < (state.duration - 0.05f)) {
+            m_isPaused = true;
+            m_pauseBtn->setText(QStringLiteral("▶ 继续"));
+            m_pauseBtn->setEnabled(true);
+            m_stopBtn->setEnabled(true);
+        } else {
+            m_isPaused = false;
+            m_pauseBtn->setText(QStringLiteral("⏸ 暂停"));
+            m_pauseBtn->setEnabled(false);
+            m_stopBtn->setEnabled(false);
+        }
+    }
 }

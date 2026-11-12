@@ -47,12 +47,15 @@ signals:
     void visibilityToggled(const QString& filePath, DataType dt, bool visible);
     void colorChanged(const QString& filePath, DataType dt, const QColor& color);
     void selectionChanged(const QString& seriesKey);
+    void fileActivated(const QString& filePath);
     void vadRunRequested(const QString& filePath);
     void vadAlgorithmChanged(const QString& name);
     void vadParamChanged(const QString& key, float value);
 
 public slots:
     void refreshSeriesSelector();
+    void setActiveFile(const QString& filePath);
+    void updateFromXRange(double min, double max);
     void setVadAlgorithms(const QStringList& names, const QString& current);
     void setVadParams(const QVector<VadParamDef>& params);
     void setPlaybackState(const PlaybackState& state, float chartPosition);
@@ -64,7 +67,10 @@ private slots:
     void onToggleVisibility();
     void onDeleteSelected();
     void onPlaySelected();
+    void onPauseResume();
     void onStop();
+    void onSliderSeek(int value);
+    void onSliderSeekReleased();
     void onVadAlgorithmChanged(int index);
     void onVadParamChanged();
     void onRunVad();
@@ -98,7 +104,13 @@ private:
     QPushButton* m_visibleBtn = nullptr;
     QPushButton* m_deleteBtn = nullptr;
     QPushButton* m_playBtn = nullptr;
+    QPushButton* m_pauseBtn = nullptr;
     QPushButton* m_stopBtn = nullptr;
+    QSlider* m_playbackSlider = nullptr;
+    QLabel* m_playbackTimeLabel = nullptr;
+    bool m_isPaused = false;
+    bool m_isTrackingSlider = false;
+    float m_currentDuration = 0.0f;
 
     // VAD
     QComboBox* m_vadAlgoCombo = nullptr;

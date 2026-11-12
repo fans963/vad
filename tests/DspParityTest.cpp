@@ -3,10 +3,12 @@
 #include "dsp/PitchDetector.h"
 #include "dsp/ZeroCrossingRate.h"
 #include "vad/ReferenceVad.h"
+#include "vad/SileroVad.h"
 
 #include <QCoreApplication>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <iostream>
 
 namespace {
@@ -22,7 +24,7 @@ int main(int argc, char** argv) {
     constexpr int frameSize = 256;
     QVector<float> signal(sampleRate);
     for (int i = sampleRate / 4; i < sampleRate * 3 / 4; ++i)
-        signal[i] = 0.7f * std::sin(2.0 * M_PI * 200.0 * i / sampleRate);
+        signal[i] = 0.7f * std::sin(2.0 * std::numbers::pi * 200.0 * i / sampleRate);
 
     bool ok = true;
 
@@ -95,5 +97,32 @@ int main(int argc, char** argv) {
     for (float hz : pitch.pitch)
         if (hz > 170.0f && hz < 230.0f) ++voicedFrames;
     ok &= check(voicedFrames > 0, "ACF detector must find a 200 Hz pitch");
+
+    SileroVad sileroDetector;
+    ok &= check(SileroVad::isModelAvailable(), "Silero VAD model must be discoverable in assets/model");
+    const auto sileroVad = sileroDetector.process(signal, sampleRate, frameSize);
+    ok &= check(!sileroVad.confidence.isEmpty(), "Silero VAD must produce frame confidences");
+    ok &= check(sileroVad.energy.size() == sileroVad.confidence.size(),
+                "Silero VAD probability curve must align one-to-one with frames");
+    ok &= check(std::any_of(sileroVad.energy.begin(), sileroVad.energy.end(),
+                            [](float prob) { return prob > 0.1f; }),
+                "Silero VAD must produce elevated probability on active signal compared to baseline");
+
+    SileroVad sileroSensitive;
+    sileroSensitive.threshold = 0.20f;
+    sileroSensitive.minSpeechMs = 50;
+    const auto sensitiveVad = sileroSensitive.process(signal, sampleRate, frameSize);
+    ok &= check(std::any_of(sensitiveVad.confidence.begin(), sensitiveVad.confidence.end(),
+                            [](float v) { return v > 0.5f; }),
+                "Silero VAD with lowered threshold must trigger on the active tone segment");
+
+    // Also test resampled rate (e.g. 48000 Hz input to Silero)
+    QVector<float> signal48k(48000);
+    for (int i = 12000; i < 36000; ++i)
+        signal48k[i] = 0.7f * std::sin(2.0 * std::numbers::pi * 200.0 * i / 48000.0);
+    const auto resampledVad = sileroSensitive.process(signal48k, 48000, 768);
+    ok &= check(!resampledVad.confidence.isEmpty(),
+                "Silero VAD must support non-16kHz sample rates via internal resampling");
+
     return ok ? 0 : 1;
 }

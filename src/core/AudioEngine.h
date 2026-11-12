@@ -36,6 +36,9 @@ public:
     Q_INVOKABLE void removeChart(const QString& filePath, DataType dataType);
     Q_INVOKABLE void setChartVisibility(const QString& filePath, DataType dataType,
                                          bool visible);
+    bool hasChart(const QString& filePath, DataType dataType) const;
+    bool isChartVisible(const QString& filePath, DataType dataType) const;
+    void emitVadDebug(const QString& filePath);
     Q_INVOKABLE void removeAudio(const QString& filePath);
 
     // Audio info
@@ -57,6 +60,7 @@ public:
     Q_INVOKABLE void runVad(const QString& filePath);
 
     // ── Audio playback ─────────────────────────────────────────────────────
+    void loadAudioForPlayback(const QString& filePath);
     Q_INVOKABLE void playAudio(const QString& filePath, double startFraction = 0.0);
     void playAudioRange(const QString& filePath, uint64_t firstSample,
                         uint64_t lastSample);
@@ -65,6 +69,8 @@ public:
     Q_INVOKABLE void stopAudio();
     Q_INVOKABLE void seekAudio(double fraction);
     Q_INVOKABLE void setPlaybackSpeed(float multiplier);
+    bool isAudioPlaying() const { return m_player.isPlaying(); }
+    bool isAudioLoaded() const { return m_player.isLoaded(); }
 
 signals:
     // Chart events for the UI
@@ -84,6 +90,7 @@ private:
     ChartCache m_cache;
     AudioPlayer m_player;
     VadEngine m_vad;
+    QString m_currentPlayingFile;
     QHash<QString, VadDebugData> m_vadDebug;
     mutable std::mutex m_vadDebugMutex;
 

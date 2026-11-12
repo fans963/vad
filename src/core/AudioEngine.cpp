@@ -124,6 +124,10 @@ void AudioEngine::addChart(const QString& filePath, DataType dataType) {
 
     auto cached = m_cache.get(filePath, dataType);
     if (cached.has_value()) {
+        if (!cached->visible) {
+            cached->visible = true;
+            m_cache.add(filePath, *cached);
+        }
         recomputeRanges();
         emitRangeSignals();
 
@@ -203,7 +207,34 @@ void AudioEngine::setChartVisibility(const QString& filePath, DataType dataType,
     syncToUi();
 }
 
+bool AudioEngine::hasChart(const QString& filePath, DataType dataType) const {
+    return m_cache.get(filePath, dataType).has_value();
+}
+
+bool AudioEngine::isChartVisible(const QString& filePath, DataType dataType) const {
+    auto c = m_cache.get(filePath, dataType);
+    return c.has_value() && c->visible;
+}
+
+void AudioEngine::emitVadDebug(const QString& filePath) {
+    ChartEvent debugEvent;
+    debugEvent.type = ChartEvent::UpdateVadDebug;
+    {
+        std::lock_guard<std::mutex> lock(m_vadDebugMutex);
+        if (!filePath.isEmpty() && m_vadDebug.contains(filePath)) {
+            debugEvent.vadDebug = m_vadDebug.value(filePath);
+        } else {
+            debugEvent.vadDebug = VadDebugData{};
+        }
+    }
+    emit chartEvent(debugEvent);
+}
+
 void AudioEngine::removeAudio(const QString& filePath) {
+    if (m_currentPlayingFile == filePath) {
+        m_player.stop();
+        m_currentPlayingFile.clear();
+    }
     m_cache.removeAll(filePath);
     m_storage.remove(filePath);
     const bool removedVadDebug = m_vadDebug.remove(filePath) > 0;
@@ -386,12 +417,24 @@ void AudioEngine::runVad(const QString& filePath) {
 
 // ── Audio playback ───────────────────────────────────────────────────────────
 
-void AudioEngine::playAudio(const QString& filePath, double startFraction) {
+void AudioEngine::loadAudioForPlayback(const QString& filePath) {
+    if (filePath.isEmpty()) return;
+    if (m_currentPlayingFile == filePath && m_player.isLoaded()) return;
     auto audio = m_storage.load(filePath);
     if (!audio) return;
     m_player.load(*audio);
+    m_currentPlayingFile = filePath;
+}
+
+void AudioEngine::playAudio(const QString& filePath, double startFraction) {
+    auto audio = m_storage.load(filePath);
+    if (!audio) return;
+    if (!m_player.isLoaded() || m_currentPlayingFile != filePath) {
+        m_player.load(*audio);
+        m_currentPlayingFile = filePath;
+    }
     uint64_t total = audio->samples.size();
-    uint64_t start = std::min(total, (uint64_t)(total * startFraction));
+    uint64_t start = std::min(total, static_cast<uint64_t>(total * std::clamp(startFraction, 0.0, 1.0)));
     m_player.play(start);
 }
 
@@ -408,9 +451,21 @@ void AudioEngine::pauseAudio() { m_player.pause(); }
 void AudioEngine::stopAudio() { m_player.stop(); }
 
 void AudioEngine::seekAudio(double fraction) {
+    if (!m_player.isLoaded()) {
+        const auto files = loadedFiles();
+        if (!files.isEmpty()) {
+            auto audio = m_storage.load(files.first());
+            if (audio) {
+                m_player.load(*audio);
+                m_currentPlayingFile = files.first();
+            }
+        }
+    }
     auto total = m_player.totalSamples();
-    if (total)
-        m_player.seek((uint64_t)(*total * fraction));
+    if (total && *total > 0) {
+        uint64_t pos = static_cast<uint64_t>(std::clamp(fraction, 0.0, 1.0) * (*total));
+        m_player.seek(pos);
+    }
 }
 
 void AudioEngine::setPlaybackSpeed(float m) { m_player.setSpeed(m); }
@@ -466,11 +521,19 @@ void AudioEngine::syncToUi() {
 }
 
 CachedChart AudioEngine::prepareChartForUi(const CachedChart& chart) const {
+    if (chart.dataType == DataType::Spectrogram) {
+        return chart;
+    }
     // The cache always owns the full-resolution result. Range clipping and
     // min/max reduction happen exactly once, immediately before UI delivery.
-    const CachedChart ranged = isFullRange()
-        ? chart
-        : chart.getRange(m_indexRangeStart, m_indexRangeEnd);
+    if (isFullRange()) {
+        return minMaxDownsample(chart, m_downSamplePointsNum);
+    }
+    const float span = std::max(1.0f, m_indexRangeEnd - m_indexRangeStart);
+    const float padding = span * 0.5f; // 50% overscan buffer for smooth panning
+    const float fetchStart = std::max(0.0f, m_indexRangeStart - padding);
+    const float fetchEnd = std::min(m_maxIndex, m_indexRangeEnd + padding);
+    const CachedChart ranged = chart.getRange(fetchStart, fetchEnd);
     return minMaxDownsample(ranged, m_downSamplePointsNum);
 }
 

@@ -1,3 +1,7 @@
 [submodule "3rdparty/vcpkg"]
 	path = 3rdparty/vcpkg
 	url = https://github.com/microsoft/vcpkg.git
+
+[submodule "report/njust-typst"]
+	path = report/njust-typst
+	url = https://github.com/creeper5820/njust-typst.git

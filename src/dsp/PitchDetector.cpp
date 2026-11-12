@@ -7,7 +7,7 @@
 
 float pitchFromIdx(int idx, uint32_t sampleRate) {
     if (idx <= 0) return 0.0f;
-    return (float)sampleRate / idx;
+    return static_cast<float>(sampleRate) / static_cast<float>(idx);
 }
 
 // ── ACF pitch ───────────────────────────────────────────────────────────────
@@ -148,30 +148,32 @@ PitchResult detectPitchCepstral(const QVector<float>& samples, int frameSize,
     int nFrames = frames.size();
     r.pitch.resize(nFrames);
     r.confidence.resize(nFrames);
+    if (nFrames == 0) return r;
 
-    FftProcessor fftCep(frameSize);
+    parallelForChunked(nFrames, [&](int start, int end) {
+        FftProcessor fftCep(frameSize);
+        for (int f = start; f < end; ++f) {
+            auto cep = fftCep.computeRealCepstrum(frames.frame(f), frameSize);
 
-    for (int f = 0; f < nFrames; ++f) {
-        auto cep = fftCep.computeRealCepstrum(frames.frame(f), frameSize);
+            int maxLag = cep.size() - 1;
+            int minIdx = sampleRate / 500;
+            int maxIdx = sampleRate / 50;
+            minIdx = std::max(32, minIdx);
+            maxIdx = std::min(maxLag, maxIdx);
 
-        int maxLag = cep.size() - 1;
-        int minIdx = sampleRate / 500;
-        int maxIdx = sampleRate / 50;
-        minIdx = std::max(32, minIdx);
-        maxIdx = std::min(maxLag, maxIdx);
-
-        float maxVal = 0.0f;
-        int bestIdx = 0;
-        for (int k = minIdx; k <= maxIdx; ++k) {
-            if (cep[k] > maxVal) { maxVal = cep[k]; bestIdx = k; }
+            float maxVal = 0.0f;
+            int bestIdx = 0;
+            for (int k = minIdx; k <= maxIdx; ++k) {
+                if (cep[k] > maxVal) { maxVal = cep[k]; bestIdx = k; }
+            }
+            if (bestIdx > 32) {
+                r.pitch[f] = pitchFromIdx(bestIdx, sampleRate);
+                r.confidence[f] = maxVal / std::max(cep[0], 1e-10f);
+            } else {
+                r.pitch[f] = 0.0f;
+                r.confidence[f] = 0.0f;
+            }
         }
-        if (bestIdx > 32) {
-            r.pitch[f] = pitchFromIdx(bestIdx, sampleRate);
-            r.confidence[f] = maxVal / std::max(cep[0], 1e-10f);
-        } else {
-            r.pitch[f] = 0.0f;
-            r.confidence[f] = 0.0f;
-        }
-    }
+    }, 64);
     return r;
 }

@@ -3,6 +3,9 @@
 #include <algorithm>
 
 CachedChart minMaxDownsample(const CachedChart& chart, int targetPoints) {
+    if (chart.dataType == DataType::Spectrogram) {
+        return chart;
+    }
     const auto& pts = chart.points;
     int n = pts.size();
     if (n <= targetPoints || n <= 2) {
@@ -95,6 +98,11 @@ CachedChart minMaxDownsample(const CachedChart& chart, int targetPoints) {
     out.minY = (minY <= maxY) ? minY : chart.minY;
     out.maxY = (minY <= maxY) ? maxY : chart.maxY;
     out.visible = chart.visible;
+    out.heatValues = chart.heatValues;
+    out.heatColumns = chart.heatColumns;
+    out.heatRows = chart.heatRows;
+    out.heatXMax = chart.heatXMax;
+    out.heatYMax = chart.heatYMax;
     return out;
 }
 

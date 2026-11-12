@@ -3,6 +3,8 @@
 #include <QVector>
 #include <cmath>
 #include <algorithm>
+#include <numbers>
+#include <span>
 
 // ── Window types ────────────────────────────────────────────────────────────
 enum class WindowType { Rectangular, Hamming, Hanning, Blackman };
@@ -14,10 +16,13 @@ struct FramedSignal {
     int hopSize = 0;
     QVector<float> data; // Contiguous memory: numFrames * frameSize
 
-    inline bool isEmpty() const { return numFrames == 0; }
-    inline int size() const { return numFrames; }
-    inline const float* frame(int i) const { return data.constData() + i * frameSize; }
-    inline float* frame(int i) { return data.data() + i * frameSize; }
+    [[nodiscard]] constexpr bool isEmpty() const noexcept { return numFrames == 0; }
+    [[nodiscard]] constexpr int size() const noexcept { return numFrames; }
+    [[nodiscard]] constexpr const float* frame(int i) const noexcept { return data.constData() + i * frameSize; }
+    [[nodiscard]] constexpr float* frame(int i) noexcept { return data.data() + i * frameSize; }
+    [[nodiscard]] std::span<const float> frameSpan(int i) const noexcept {
+        return {frame(i), static_cast<std::size_t>(frameSize)};
+    }
 
     QVector<float> getFrameVector(int i) const {
         QVector<float> v(frameSize);
@@ -40,19 +45,19 @@ QVector<QVector<float>> frameSignal(const QVector<float>& samples,
                                      float preEmphasisAlpha = 0.95f);
 
 // ── Sign function ───────────────────────────────────────────────────────────
-inline float sgn(float x) { return x >= 0.0f ? 1.0f : -1.0f; }
+[[nodiscard]] constexpr float sgn(float x) noexcept { return x >= 0.0f ? 1.0f : -1.0f; }
 
 // ── Window coefficients ─────────────────────────────────────────────────────
 inline QVector<float> windowCoef(int size, WindowType type = WindowType::Hamming) {
     QVector<float> w(size);
     for (int i = 0; i < size; ++i) {
-        double r = (double)i / (size - 1);
+        double r = static_cast<double>(i) / (size - 1);
         switch (type) {
         case WindowType::Rectangular: w[i] = 1.0f; break;
-        case WindowType::Hanning:     w[i] = 0.50f - 0.50f * std::cos(2.0 * M_PI * r); break;
-        case WindowType::Blackman:    w[i] = 0.42f - 0.50f * std::cos(2.0 * M_PI * r)
-                                            + 0.08f * std::cos(4.0 * M_PI * r); break;
-        default:                      w[i] = 0.54f - 0.46f * std::cos(2.0 * M_PI * r); break;
+        case WindowType::Hanning:     w[i] = 0.50f - 0.50f * std::cos(2.0 * std::numbers::pi * r); break;
+        case WindowType::Blackman:    w[i] = 0.42f - 0.50f * std::cos(2.0 * std::numbers::pi * r)
+                                            + 0.08f * std::cos(4.0 * std::numbers::pi * r); break;
+        default:                      w[i] = 0.54f - 0.46f * std::cos(2.0 * std::numbers::pi * r); break;
         }
     }
     return w;

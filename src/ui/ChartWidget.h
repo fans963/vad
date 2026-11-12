@@ -29,6 +29,9 @@ public:
     void setGlobalYTransform(double scale, double position);
     QPair<double, double> globalYTransform() const;
     bool isVisible(const QString& filePath, DataType dt) const;
+    bool hasSeries(const QString& filePath, DataType dt) const;
+    bool isSeriesVisible(const QString& filePath, DataType dt) const;
+    QCPRange xRange() const;
     void setSeriesVisible(const QString& filePath, DataType dt, bool visible);
     void setSeriesColor(const QString& filePath, DataType dt, const QColor& color);
     QPair<double, double> selectionRange() const;
@@ -39,6 +42,7 @@ public:
     double maxIndex() const { return m_maxIndex; }
     void setMaxIndex(double maxIdx) { m_maxIndex = maxIdx; }
     int plotWidth() const;
+    QCustomPlot* plot() const { return m_plot; }
     void setFrameGrid(int frameSize);
     void applyFrameGrid();
 

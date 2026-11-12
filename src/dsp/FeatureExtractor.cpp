@@ -3,6 +3,7 @@
 #include "DspUtils.h"
 #include "FftProcessor.h"
 #include "LpcProcessor.h"
+#include "../core/Parallel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -47,7 +48,10 @@ CachedChart spectrum(const QVector<float>& samples, int frameSize,
     auto chart = beginChart(type);
     const auto frames = frameSignalFast(samples, frameSize, true, true, 0.95f);
     const int hop = frameSize / 2;
-    FftProcessor fft(frameSize);
+    if (frames.isEmpty()) {
+        finishChart(chart);
+        return chart;
+    }
 
     int pointsPerFrame = 0;
     switch (type) {
@@ -66,47 +70,69 @@ CachedChart spectrum(const QVector<float>& samples, int frameSize,
     default:
         break;
     }
-    if (pointsPerFrame > 0) {
-        chart.points.reserve(frames.size() * pointsPerFrame);
+    if (pointsPerFrame <= 0) {
+        finishChart(chart);
+        return chart;
     }
 
-    for (int frameIndex = 0; frameIndex < frames.size(); ++frameIndex) {
-        const float* frameData = frames.frame(frameIndex);
-        QVector<float> values;
-        switch (type) {
-        case DataType::Spectrum:
-            values = fft.computeMagnitudeSpectrum(frameData, frameSize);
-            break;
-        case DataType::PowerSpectrum: {
-            values = fft.computeMagnitudeSpectrum(frameData, frameSize);
-            for (int i = 0; i < values.size(); ++i)
-                values[i] = values[i] * values[i];
-            break;
+    chart.points.resize(frames.size() * pointsPerFrame);
+
+    parallelForChunked(frames.size(), [&](int startFrame, int endFrame) {
+        FftProcessor fft(frameSize);
+        for (int frameIndex = startFrame; frameIndex < endFrame; ++frameIndex) {
+            const float* frameData = frames.frame(frameIndex);
+            QVector<float> values;
+            switch (type) {
+            case DataType::Spectrum:
+                values = fft.computeMagnitudeSpectrum(frameData, frameSize);
+                break;
+            case DataType::PowerSpectrum: {
+                values = fft.computeMagnitudeSpectrum(frameData, frameSize);
+                for (int i = 0; i < values.size(); ++i)
+                    values[i] = values[i] * values[i];
+                break;
+            }
+            case DataType::LogSpectrum: {
+                values = fft.computeMagnitudeSpectrum(frameData, frameSize);
+                for (int i = 0; i < values.size(); ++i)
+                    values[i] = 10.0f * std::log10(values[i] * values[i] + 1e-20f);
+                break;
+            }
+            case DataType::Cepstrum:
+                values = fft.computeRealCepstrum(frameData, frameSize);
+                break;
+            case DataType::SpectrumFFT: {
+                const auto magnitude = fft.computeMagnitudeSpectrum(frameData, frameSize);
+                values = fft.computeSpectrumOfSpectrum(magnitude);
+                break;
+            }
+            case DataType::MelSpectrum: {
+                const auto magnitude = fft.computeMagnitudeSpectrum(frameData, frameSize);
+                values = FftProcessor::computeMelSpectrum(magnitude, sampleRate, 24);
+                break;
+            }
+            default:
+                break;
+            }
+
+            const float base = float(frameIndex * hop);
+            const float spacing = values.isEmpty() ? 0.0f : float(hop) / values.size();
+            ChartPoint* dst = chart.points.data() + frameIndex * pointsPerFrame;
+            for (int i = 0; i < pointsPerFrame; ++i) {
+                const float value = (i < values.size() && std::isfinite(values[i])) ? values[i] : 0.0f;
+                dst[i] = {base + i * spacing, value};
+            }
         }
-        case DataType::LogSpectrum: {
-            values = fft.computeMagnitudeSpectrum(frameData, frameSize);
-            for (int i = 0; i < values.size(); ++i)
-                values[i] = 10.0f * std::log10(values[i] * values[i] + 1e-20f);
-            break;
-        }
-        case DataType::Cepstrum:
-            values = fft.computeRealCepstrum(frameData, frameSize);
-            break;
-        case DataType::SpectrumFFT: {
-            const auto magnitude = fft.computeMagnitudeSpectrum(frameData, frameSize);
-            values = fft.computeSpectrumOfSpectrum(magnitude);
-            break;
-        }
-        case DataType::MelSpectrum: {
-            const auto magnitude = fft.computeMagnitudeSpectrum(frameData, frameSize);
-            values = FftProcessor::computeMelSpectrum(magnitude, sampleRate, 24);
-            break;
-        }
-        default:
-            break;
-        }
-        appendFrame(chart, values, frameIndex, hop);
+    }, 64);
+
+    float minY = std::numeric_limits<float>::max();
+    float maxY = std::numeric_limits<float>::lowest();
+    for (const auto& pt : chart.points) {
+        minY = std::min(minY, pt.y);
+        maxY = std::max(maxY, pt.y);
     }
+    chart.minY = minY;
+    chart.maxY = maxY;
     finishChart(chart);
     return chart;
 }
@@ -116,21 +142,42 @@ CachedChart coefficients(const QVector<float>& samples, int frameSize,
     auto chart = beginChart(type);
     const auto frames = frameSignalFast(samples, frameSize, true, true, 0.95f);
     const int hop = frameSize / 2;
-    FftProcessor fft(frameSize);
-    const int pointsPerFrame = (type == DataType::Mfcc) ? 13 : 14;
-    chart.points.reserve(frames.size() * pointsPerFrame);
-
-    for (int frameIndex = 0; frameIndex < frames.size(); ++frameIndex) {
-        const float* frameData = frames.frame(frameIndex);
-        QVector<float> values;
-        if (type == DataType::Mfcc) {
-            values = fft.computeMFCC(frameData, frameSize, sampleRate, 24, 13);
-        } else {
-            const auto lpc = computeLPC(frameData, frameSize, 13);
-            values = (type == DataType::Lpc) ? lpc : lpcToLpcc(lpc, 13);
-        }
-        appendFrame(chart, values, frameIndex, hop);
+    if (frames.isEmpty()) {
+        finishChart(chart);
+        return chart;
     }
+    const int pointsPerFrame = (type == DataType::Mfcc) ? 13 : 14;
+    chart.points.resize(frames.size() * pointsPerFrame);
+
+    parallelForChunked(frames.size(), [&](int startFrame, int endFrame) {
+        FftProcessor fft(frameSize);
+        for (int frameIndex = startFrame; frameIndex < endFrame; ++frameIndex) {
+            const float* frameData = frames.frame(frameIndex);
+            QVector<float> values;
+            if (type == DataType::Mfcc) {
+                values = fft.computeMFCC(frameData, frameSize, sampleRate, 24, 13);
+            } else {
+                const auto lpc = computeLPC(frameData, frameSize, 13);
+                values = (type == DataType::Lpc) ? lpc : lpcToLpcc(lpc, 13);
+            }
+            const float base = float(frameIndex * hop);
+            const float spacing = values.isEmpty() ? 0.0f : float(hop) / values.size();
+            ChartPoint* dst = chart.points.data() + frameIndex * pointsPerFrame;
+            for (int i = 0; i < pointsPerFrame; ++i) {
+                const float value = (i < values.size() && std::isfinite(values[i])) ? values[i] : 0.0f;
+                dst[i] = {base + i * spacing, value};
+            }
+        }
+    }, 64);
+
+    float minY = std::numeric_limits<float>::max();
+    float maxY = std::numeric_limits<float>::lowest();
+    for (const auto& pt : chart.points) {
+        minY = std::min(minY, pt.y);
+        maxY = std::max(maxY, pt.y);
+    }
+    chart.minY = minY;
+    chart.maxY = maxY;
     finishChart(chart);
     return chart;
 }
@@ -146,18 +193,27 @@ CachedChart spectrogram(const QVector<float>& samples, int frameSize,
     chart.heatYMax = sampleRate / 2.0f;
     chart.heatValues.resize(chart.heatColumns * bins);
 
-    FftProcessor fft(frameSize);
+    if (frames.isEmpty()) {
+        finishChart(chart);
+        return chart;
+    }
+
+    parallelForChunked(frames.size(), [&](int startFrame, int endFrame) {
+        FftProcessor fft(frameSize);
+        for (int f = startFrame; f < endFrame; ++f) {
+            const auto mag = fft.computeMagnitudeSpectrum(frames.frame(f), frameSize);
+            float* rowDst = chart.heatValues.data() + f * bins;
+            for (int b = 0; b < bins; ++b) {
+                rowDst[b] = 20.0f * std::log10(mag[b] + 1e-10f);
+            }
+        }
+    }, 64);
+
     float minDb = std::numeric_limits<float>::max();
     float maxDb = std::numeric_limits<float>::lowest();
-    for (int f = 0; f < frames.size(); ++f) {
-        const auto mag = fft.computeMagnitudeSpectrum(frames.frame(f), frameSize);
-        float* rowDst = chart.heatValues.data() + f * bins;
-        for (int b = 0; b < bins; ++b) {
-            const float db = 20.0f * std::log10(mag[b] + 1e-10f);
-            rowDst[b] = db;
-            minDb = std::min(minDb, db);
-            maxDb = std::max(maxDb, db);
-        }
+    for (float db : chart.heatValues) {
+        minDb = std::min(minDb, db);
+        maxDb = std::max(maxDb, db);
     }
     chart.minY = minDb;
     chart.maxY = maxDb;

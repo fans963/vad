@@ -1,6 +1,7 @@
 #include "CepstralVad.h"
 #include "../dsp/DspUtils.h"
 #include "../dsp/FftProcessor.h"
+#include "../core/Parallel.h"
 
 VadResult CepstralVad::process(const QVector<float>& samples, uint32_t,
                                 int frameSize) const {
@@ -15,48 +16,50 @@ VadResult CepstralVad::process(const QVector<float>& samples, uint32_t,
     if (nFrames == 0) return result;
 
     QVector<bool> voiceFlags(nFrames, false);
-    FftProcessor fftCep(frameSize);
 
-    for (int f = 0; f < nFrames; ++f) {
-        const float* frameData = frames.frame(f);
-        float energy = 0.0f;
-        for (int j = 0; j < frameSize; ++j) {
-            const float sample = frameData[j] * 32768.0f;
-            energy += sample * sample;
+    parallelForChunked(nFrames, [&](int start, int end) {
+        FftProcessor fftCep(frameSize);
+        for (int f = start; f < end; ++f) {
+            const float* frameData = frames.frame(f);
+            float energy = 0.0f;
+            for (int j = 0; j < frameSize; ++j) {
+                const float sample = frameData[j] * 32768.0f;
+                energy += sample * sample;
+            }
+            float energyDB = 10.0f * std::log10(energy / frameSize + 1e-12f);
+            if (energyDB < energyThresholdDB) continue;
+
+            auto cep = fftCep.computeRealCepstrum(frameData, frameSize);
+
+            QVector<float> vals;
+            vals.reserve(cep.size() > 33 ? cep.size() - 33 : 0);
+            for (int i = 33; i < cep.size(); ++i)
+                vals.append(cep[i]);
+            if (vals.isEmpty()) continue;
+
+            std::sort(vals.begin(), vals.end());
+            float median = vals[vals.size() / 2];
+
+            float maxPeak = 0.0f;
+            int maxIdx = 33;
+            for (int i = 33; i < cep.size(); ++i) {
+                if (cep[i] > maxPeak) { maxPeak = cep[i]; maxIdx = i; }
+            }
+
+            float secondPeak = 0.0f;
+            for (int i = 33; i < cep.size(); ++i) {
+                if (std::abs(i - maxIdx) > 25 && cep[i] > secondPeak)
+                    secondPeak = cep[i];
+            }
+
+            float p1 = maxPeak - median;
+            float p2 = secondPeak - median;
+            if (p2 < 1e-6f) p2 = 1e-6f;
+
+            float divide = p1 / p2;
+            voiceFlags[f] = (divide >= divideThreshold);
         }
-        float energyDB = 10.0f * std::log10(energy / frameSize + 1e-12f);
-        if (energyDB < energyThresholdDB) continue;
-
-        auto cep = fftCep.computeRealCepstrum(frameData, frameSize);
-
-        QVector<float> vals;
-        vals.reserve(cep.size() > 33 ? cep.size() - 33 : 0);
-        for (int i = 33; i < cep.size(); ++i)
-            vals.append(cep[i]);
-        if (vals.isEmpty()) continue;
-
-        std::sort(vals.begin(), vals.end());
-        float median = vals[vals.size() / 2];
-
-        float maxPeak = 0.0f;
-        int maxIdx = 33;
-        for (int i = 33; i < cep.size(); ++i) {
-            if (cep[i] > maxPeak) { maxPeak = cep[i]; maxIdx = i; }
-        }
-
-        float secondPeak = 0.0f;
-        for (int i = 33; i < cep.size(); ++i) {
-            if (std::abs(i - maxIdx) > 25 && cep[i] > secondPeak)
-                secondPeak = cep[i];
-        }
-
-        float p1 = maxPeak - median;
-        float p2 = secondPeak - median;
-        if (p2 < 1e-6f) p2 = 1e-6f;
-
-        float divide = p1 / p2;
-        voiceFlags[f] = (divide >= divideThreshold);
-    }
+    }, 64);
 
     result.confidence.resize(nFrames);
     for (int i = 0; i < nFrames; ++i)

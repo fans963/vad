@@ -20,13 +20,18 @@ void AudioPlayer::miniaudioDataCallback(void* pDevicePtr, void* pOutput, const v
     const ma_uint32 channels = pDevice->playback.channels;
 
     if (!player->m_playing.load(std::memory_order_relaxed)) {
-        std::memset(out, 0, frameCount * channels * sizeof(float));
+        std::fill_n(out, frameCount * channels, 0.0f);
         return;
     }
 
     const auto totalAudioSamples = static_cast<size_t>(player->m_audio.samples.size());
     const uint64_t end = player->m_endSample.load(std::memory_order_relaxed);
     const double speed = static_cast<double>(player->m_speed.load(std::memory_order_relaxed));
+    const ma_uint32 deviceRate = pDevice->sampleRate > 0 ? pDevice->sampleRate : 48000;
+    const double rateRatio = (player->m_audio.info.sampleRate > 0)
+        ? (static_cast<double>(player->m_audio.info.sampleRate) / static_cast<double>(deviceRate))
+        : 1.0;
+    const double sampleStep = rateRatio * speed;
     const bool isStereo = (channels >= 2 && player->m_audio.info.channels >= 2 &&
                            static_cast<size_t>(player->m_audio.leftSamples.size()) == totalAudioSamples &&
                            static_cast<size_t>(player->m_audio.rightSamples.size()) == totalAudioSamples);
@@ -34,7 +39,7 @@ void AudioPlayer::miniaudioDataCallback(void* pDevicePtr, void* pOutput, const v
     for (ma_uint32 i = 0; i < frameCount; ++i) {
         double curr = player->m_currentSample.load(std::memory_order_relaxed);
         if (curr >= end || curr >= totalAudioSamples) {
-            std::memset(out + i * channels, 0, (frameCount - i) * channels * sizeof(float));
+            std::fill_n(out + i * channels, (frameCount - i) * channels, 0.0f);
             player->m_playing.store(false, std::memory_order_relaxed);
             player->m_finished.store(true, std::memory_order_release);
             break;
@@ -59,7 +64,7 @@ void AudioPlayer::miniaudioDataCallback(void* pDevicePtr, void* pOutput, const v
             }
         }
 
-        player->m_currentSample.store(curr + speed, std::memory_order_relaxed);
+        player->m_currentSample.store(curr + sampleStep, std::memory_order_relaxed);
     }
 }
 
@@ -113,7 +118,14 @@ void AudioPlayer::play(uint64_t startSample, uint64_t endSample) {
 }
 
 void AudioPlayer::resume() {
-    if (!m_playing.load() && isLoaded() && m_currentSample.load() < m_endSample.load()) {
+    if (!m_playing.load() && isLoaded()) {
+        const uint64_t total = static_cast<uint64_t>(m_audio.samples.size());
+        if (m_endSample.load() <= m_currentSample.load() || m_endSample.load() > total) {
+            m_endSample.store(total);
+        }
+        if (m_currentSample.load() >= total) {
+            m_currentSample.store(0.0);
+        }
         if (!m_device || !m_device->initialized) {
             initDevice();
         }
@@ -151,19 +163,32 @@ void AudioPlayer::stop() {
     m_startSample = 0;
     m_endSample.store(0);
     m_currentSample.store(0.0);
+    emitState();
 }
 
 void AudioPlayer::seek(uint64_t sample) {
     const bool wasPlaying = m_playing.load();
-    const uint64_t end = m_endSample.load();
-    stop();
-    const uint64_t clamped = std::min(sample, static_cast<uint64_t>(m_audio.samples.size()));
-    m_currentSample.store(static_cast<double>(clamped));
-    if (wasPlaying) {
-        play(clamped, end > clamped ? end : static_cast<uint64_t>(m_audio.samples.size()));
-    } else {
-        emitState();
+    const uint64_t total = static_cast<uint64_t>(m_audio.samples.size());
+    const uint64_t end = (m_endSample.load() > 0 && m_endSample.load() <= total) ? m_endSample.load() : total;
+    if (m_device && m_device->initialized) {
+        ma_device_stop(&m_device->device);
     }
+    m_finished.store(false);
+    const uint64_t clamped = std::min(sample, total);
+    m_currentSample.store(static_cast<double>(clamped));
+    m_endSample.store(end > clamped ? end : total);
+
+    if (wasPlaying) {
+        if (!m_device || !m_device->initialized) {
+            initDevice();
+        }
+        if (m_device && m_device->initialized) {
+            m_playing.store(true);
+            ma_device_start(&m_device->device);
+            m_timer->start();
+        }
+    }
+    emitState();
 }
 
 void AudioPlayer::setSpeed(float multiplier) {

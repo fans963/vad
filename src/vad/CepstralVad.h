@@ -33,6 +33,6 @@ public:
         else if (key == QLatin1String("energy_threshold"))
             energyThresholdDB = std::clamp(value, 10.0f, 60.0f);
         else if (key == QLatin1String("min_voice_frames"))
-            minVoiceFrames = std::clamp((int)value, 1, 10);
+            minVoiceFrames = std::clamp(static_cast<int>(value), 1, 10);
     }
 };

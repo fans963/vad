@@ -10,6 +10,10 @@ class InfoPanel : public QWidget {
 public:
     explicit InfoPanel(QWidget* parent = nullptr);
     void setAudioInfoMap(const QHash<QString, AudioInfo>& infoMap);
+    void setSelectedFile(const QString& filePath);
+
+signals:
+    void fileSelected(const QString& filePath);
 
 private:
     QListWidget* m_list = nullptr;
